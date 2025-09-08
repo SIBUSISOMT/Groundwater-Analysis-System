@@ -1,5 +1,5 @@
-// Groundwater Analysis System Frontend
-// Main JavaScript Application
+// Groundwater Analysis System Frontend - Fixed Version
+// Main JavaScript Application with Better Loading Management
 
 class GroundwaterApp {
     constructor() {
@@ -7,16 +7,53 @@ class GroundwaterApp {
         this.charts = {};
         this.currentData = null;
         this.currentMetrics = null;
+        this.retryAttempts = 3;
+        this.retryDelay = 1000;
+        this.isLoading = false; // Track loading state
+        this.initialized = false; // Track initialization state
         
         this.init();
     }
     
     async init() {
-        this.setupEventListeners();
-        await this.checkApiHealth();
-        await this.loadCatchments();
-        await this.loadDataSources();
-        this.initCharts();
+        if (this.initialized) {
+            console.warn('App already initialized');
+            return;
+        }
+        
+        try {
+            this.showMessage('Initializing application...', 'info');
+            this.setupEventListeners();
+            
+            // Only do initial health check - don't reload everything repeatedly
+            const isHealthy = await this.checkApiHealth();
+            
+            if (isHealthy) {
+                await this.loadInitialData();
+                this.initCharts();
+                this.showMessage('Application ready', 'success');
+            } else {
+                this.showMessage('Backend server is not responding. Please start the server and refresh.', 'warning');
+            }
+            
+            this.initialized = true;
+            
+        } catch (error) {
+            console.error('Initialization failed:', error);
+            this.showMessage('System initialization failed. Please refresh the page.', 'error');
+        }
+    }
+    
+    async loadInitialData() {
+        // Load data only once during initialization
+        try {
+            await this.loadCatchments();
+            await this.loadDataSources();
+        } catch (error) {
+            console.error('Failed to load initial data:', error);
+            // Don't fail completely, just show warning
+            this.showMessage('Some initial data could not be loaded', 'warning');
+        }
     }
     
     setupEventListeners() {
@@ -24,93 +61,193 @@ class GroundwaterApp {
         const fileInput = document.getElementById('fileInput');
         const dropZone = document.getElementById('dropZone');
         
-        dropZone.addEventListener('click', () => fileInput.click());
-        fileInput.addEventListener('change', (e) => this.handleFileUpload(e.target.files[0]));
+        if (fileInput && dropZone) {
+            dropZone.addEventListener('click', () => fileInput.click());
+            fileInput.addEventListener('change', (e) => {
+                if (e.target.files.length > 0) {
+                    this.handleFileUpload(e.target.files[0]);
+                }
+            });
+            
+            // Drag and drop
+            dropZone.addEventListener('dragover', (e) => {
+                e.preventDefault();
+                dropZone.classList.add('border-blue-400', 'bg-blue-50');
+            });
+            
+            dropZone.addEventListener('dragleave', () => {
+                dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+            });
+            
+            dropZone.addEventListener('drop', (e) => {
+                e.preventDefault();
+                dropZone.classList.remove('border-blue-400', 'bg-blue-50');
+                const files = e.dataTransfer.files;
+                if (files.length > 0) {
+                    this.handleFileUpload(files[0]);
+                }
+            });
+        }
         
-        // Drag and drop
-        dropZone.addEventListener('dragover', (e) => {
-            e.preventDefault();
-            dropZone.classList.add('border-blue-400', 'bg-blue-50');
-        });
+        // Filters - prevent multiple rapid calls
+        const applyFiltersBtn = document.getElementById('applyFilters');
+        const clearFiltersBtn = document.getElementById('clearFilters');
+        const exportDataBtn = document.getElementById('exportData');
         
-        dropZone.addEventListener('dragleave', () => {
-            dropZone.classList.remove('border-blue-400', 'bg-blue-50');
-        });
-        
-        dropZone.addEventListener('drop', (e) => {
-            e.preventDefault();
-            dropZone.classList.remove('border-blue-400', 'bg-blue-50');
-            const files = e.dataTransfer.files;
-            if (files.length > 0) {
-                this.handleFileUpload(files[0]);
-            }
-        });
-        
-        // Filters
-        document.getElementById('applyFilters').addEventListener('click', () => this.applyFilters());
-        document.getElementById('clearFilters').addEventListener('click', () => this.clearFilters());
-        document.getElementById('exportData').addEventListener('click', () => this.exportData());
+        if (applyFiltersBtn) {
+            applyFiltersBtn.addEventListener('click', this.debounce(() => this.applyFilters(), 500));
+        }
+        if (clearFiltersBtn) clearFiltersBtn.addEventListener('click', () => this.clearFilters());
+        if (exportDataBtn) exportDataBtn.addEventListener('click', () => this.exportData());
         
         // Modal controls
-        document.getElementById('settingsBtn').addEventListener('click', () => this.showThresholdModal());
-        document.getElementById('closeThresholdModal').addEventListener('click', () => this.hideThresholdModal());
+        const settingsBtn = document.getElementById('settingsBtn');
+        const closeModalBtn = document.getElementById('closeThresholdModal');
         
-        // Auto-refresh filters when parameter changes
-        document.getElementById('parameterFilter').addEventListener('change', () => {
-            if (this.currentData) {
-                this.applyFilters();
-            }
-        });
-    }
-    
-    async checkApiHealth() {
-        try {
-            const response = await fetch(`${this.apiBase}/health`);
-            const data = await response.json();
-            
-            const statusEl = document.getElementById('healthStatus');
-            if (data.status === 'healthy') {
-                statusEl.innerHTML = '<div class="w-3 h-3 bg-green-400 rounded-full mr-2"></div><span class="text-sm">Connected</span>';
-            } else {
-                statusEl.innerHTML = '<div class="w-3 h-3 bg-red-400 rounded-full mr-2"></div><span class="text-sm">Error</span>';
-            }
-        } catch (error) {
-            console.error('Health check failed:', error);
-            const statusEl = document.getElementById('healthStatus');
-            statusEl.innerHTML = '<div class="w-3 h-3 bg-red-400 rounded-full mr-2"></div><span class="text-sm">Offline</span>';
+        if (settingsBtn) settingsBtn.addEventListener('click', () => this.showThresholdModal());
+        if (closeModalBtn) closeModalBtn.addEventListener('click', () => this.hideThresholdModal());
+        
+        // Parameter change - debounced
+        const parameterFilter = document.getElementById('parameterFilter');
+        if (parameterFilter) {
+            parameterFilter.addEventListener('change', this.debounce(() => {
+                if (this.currentData && !this.isLoading) {
+                    this.applyFilters();
+                }
+            }, 300));
         }
     }
     
+    // Debounce function to prevent rapid API calls
+    debounce(func, wait) {
+        let timeout;
+        return function executedFunction(...args) {
+            const later = () => {
+                clearTimeout(timeout);
+                func(...args);
+            };
+            clearTimeout(timeout);
+            timeout = setTimeout(later, wait);
+        };
+    }
+    
+    async makeApiCall(endpoint, options = {}) {
+        // Prevent concurrent calls to same endpoint
+        const requestKey = `${endpoint}:${JSON.stringify(options)}`;
+        if (this.activeRequests?.has(requestKey)) {
+            console.warn('Duplicate request blocked:', requestKey);
+            throw new Error('Request already in progress');
+        }
+        
+        if (!this.activeRequests) {
+            this.activeRequests = new Set();
+        }
+        
+        this.activeRequests.add(requestKey);
+        
+        try {
+            const defaultOptions = {
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Accept': 'application/json'
+                },
+                timeout: 30000, // 30 second timeout
+                ...options
+            };
+            
+            let lastError = null;
+            
+            for (let attempt = 1; attempt <= this.retryAttempts; attempt++) {
+                try {
+                    const controller = new AbortController();
+                    const timeoutId = setTimeout(() => controller.abort(), defaultOptions.timeout);
+                    
+                    const response = await fetch(`${this.apiBase}${endpoint}`, {
+                        ...defaultOptions,
+                        signal: controller.signal
+                    });
+                    
+                    clearTimeout(timeoutId);
+                    
+                    // If successful or client error, return the response
+                    if (response.ok || response.status < 500) {
+                        return response;
+                    }
+                    
+                    // For server errors, retry
+                    lastError = new Error(`Server error: ${response.status}`);
+                    
+                } catch (error) {
+                    lastError = error;
+                    
+                    // Don't retry for certain errors
+                    if (error.name === 'AbortError' || error.message.includes('NetworkError')) {
+                        break;
+                    }
+                    
+                    console.warn(`API call attempt ${attempt} failed:`, error.message);
+                }
+                
+                // Wait before retrying (except on last attempt)
+                if (attempt < this.retryAttempts) {
+                    await new Promise(resolve => setTimeout(resolve, this.retryDelay * attempt));
+                }
+            }
+            
+            throw lastError || new Error('API call failed after all retries');
+            
+        } finally {
+            this.activeRequests.delete(requestKey);
+        }
+    }
+   
+    
     async loadCatchments() {
         try {
-            const response = await fetch(`${this.apiBase}/catchments`);
+            const response = await this.makeApiCall('/catchments');
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load catchments: ${response.status}`);
+            }
+            
             const data = await response.json();
             
             const select = document.getElementById('catchmentFilter');
-            select.innerHTML = '<option value="">All Catchments</option>';
-            
-            if (data.catchments) {
-                data.catchments.forEach(catchment => {
-                    const option = document.createElement('option');
-                    option.value = catchment.catchment_name;
-                    option.textContent = `${catchment.catchment_name} (${catchment.total_records || 0} records)`;
-                    select.appendChild(option);
-                });
+            if (select) {
+                select.innerHTML = '<option value="">All Catchments</option>';
+                
+                if (data.catchments && Array.isArray(data.catchments)) {
+                    data.catchments.forEach(catchment => {
+                        const option = document.createElement('option');
+                        option.value = catchment.catchment_name || '';
+                        option.textContent = `${catchment.catchment_name || 'Unknown'} (${catchment.total_records || 0} records)`;
+                        select.appendChild(option);
+                    });
+                }
             }
         } catch (error) {
             console.error('Failed to load catchments:', error);
-            this.showMessage('Failed to load catchments', 'error');
+            // Don't show error message for initial load failures
+            if (this.initialized) {
+                this.showMessage('Failed to load catchments', 'warning');
+            }
         }
     }
     
     async loadDataSources() {
         try {
-            const response = await fetch(`${this.apiBase}/sources`);
+            const response = await this.makeApiCall('/sources');
+            
+            if (!response.ok) {
+                throw new Error(`Failed to load data sources: ${response.status}`);
+            }
+            
             const data = await response.json();
             
             const container = document.getElementById('dataSourcesTable');
+            if (!container) return;
             
-            if (!data.sources || data.sources.length === 0) {
+            if (!data.sources || !Array.isArray(data.sources) || data.sources.length === 0) {
                 container.innerHTML = '<p class="text-gray-500 text-center py-8">No data sources available. Upload an Excel file to get started.</p>';
                 return;
             }
@@ -120,7 +257,11 @@ class GroundwaterApp {
             
         } catch (error) {
             console.error('Failed to load data sources:', error);
-            this.showMessage('Failed to load data sources', 'error');
+            const container = document.getElementById('dataSourcesTable');
+            if (container && this.initialized) {
+                container.innerHTML = '<p class="text-red-500 text-center py-8">Failed to load data sources. Please refresh the page.</p>';
+                this.showMessage('Failed to load data sources', 'error');
+            }
         }
     }
     
@@ -148,19 +289,22 @@ class GroundwaterApp {
             const dateRange = source.date_range_start && source.date_range_end ? 
                 `${source.date_range_start} to ${source.date_range_end}` : 'N/A';
             
+            const fileName = source.file_name || 'Unknown';
+            const uploadDate = source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'Unknown';
+            
             html += `
                 <tr class="border-b hover:bg-gray-50">
-                    <td class="px-4 py-2">${source.file_name}</td>
-                    <td class="px-4 py-2">${new Date(source.upload_date).toLocaleDateString()}</td>
+                    <td class="px-4 py-2" title="${fileName}">${fileName.length > 50 ? fileName.substring(0, 47) + '...' : fileName}</td>
+                    <td class="px-4 py-2">${uploadDate}</td>
                     <td class="px-4 py-2">${source.file_size_kb || 0}</td>
                     <td class="px-4 py-2">${source.processed_records || 0}</td>
-                    <td class="px-4 py-2 ${statusClass}">${source.processing_status}</td>
+                    <td class="px-4 py-2 ${statusClass}">${source.processing_status || 'Unknown'}</td>
                     <td class="px-4 py-2">${dateRange}</td>
                     <td class="px-4 py-2">
-                        <button onclick="app.viewSource(${source.source_id})" class="text-blue-600 hover:text-blue-800 mr-2">
+                        <button onclick="app.viewSource(${source.source_id})" class="text-blue-600 hover:text-blue-800 mr-2" title="View Data">
                             <i class="fas fa-eye"></i>
                         </button>
-                        <button onclick="app.deleteSource(${source.source_id})" class="text-red-600 hover:text-red-800">
+                        <button onclick="app.deleteSource(${source.source_id})" class="text-red-600 hover:text-red-800" title="Delete Source">
                             <i class="fas fa-trash"></i>
                         </button>
                     </td>
@@ -173,8 +317,18 @@ class GroundwaterApp {
     }
     
     async handleFileUpload(file) {
-        if (!file) return;
-        
+        if (!file || this.isLoading) return;
+
+        // Get selected category and subcatchment
+        const category = this.getElementValue('categorySelect');
+        const subcatchment = this.getElementValue('subcatchmentSelect');
+
+        if (!category || !subcatchment) {
+            this.showMessage('Please select both category and subcatchment before uploading.', 'error');
+            return;
+        }
+
+        // Validate file
         if (!file.name.match(/\.(xlsx|xls)$/)) {
             this.showMessage('Please select an Excel file (.xlsx or .xls)', 'error');
             return;
@@ -185,12 +339,15 @@ class GroundwaterApp {
             return;
         }
         
+        this.isLoading = true;
         this.showLoading('Uploading and processing file...');
         
-        const formData = new FormData();
-        formData.append('file', file);
-        
         try {
+            const formData = new FormData();
+            formData.append('file', file);
+            formData.append('category', category);
+            formData.append('subcatchment', subcatchment);
+
             const response = await fetch(`${this.apiBase}/upload`, {
                 method: 'POST',
                 body: formData
@@ -199,32 +356,37 @@ class GroundwaterApp {
             const result = await response.json();
             
             if (!response.ok) {
-                throw new Error(result.error || 'Upload failed');
+                throw new Error(result.error || result.message || 'Upload failed');
             }
-            
-            this.showMessage(`File uploaded successfully! ${result.processed_records} records processed.`, 'success');
-            
-            // Refresh data
-            await this.loadCatchments();
+
+            // Only refresh after successful upload and processing
+            this.showMessage(`File uploaded successfully! ${result.processed_records || 0} records processed.`, 'success');
             await this.loadDataSources();
-            await this.applyFilters();
-            
+            await this.loadCatchments();
+
         } catch (error) {
             console.error('Upload failed:', error);
-            this.showMessage(error.message || 'Upload failed', 'error');
+            this.showMessage(`Upload failed: ${error.message}`, 'error');
         } finally {
+            this.isLoading = false;
             this.hideLoading();
         }
     }
     
     async applyFilters() {
+        if (this.isLoading) {
+            console.warn('Already loading, skipping filter application');
+            return;
+        }
+        
         const filters = {
-            catchment: document.getElementById('catchmentFilter').value,
-            parameter: document.getElementById('parameterFilter').value,
-            start_date: document.getElementById('startDateFilter').value,
-            end_date: document.getElementById('endDateFilter').value
+            catchment: this.getElementValue('catchmentFilter'),
+            parameter: this.getElementValue('parameterFilter', 'GWR'),
+            start_date: this.getElementValue('startDateFilter'),
+            end_date: this.getElementValue('endDateFilter')
         };
         
+        this.isLoading = true;
         this.showLoading('Loading data...');
         
         try {
@@ -234,85 +396,128 @@ class GroundwaterApp {
                 if (filters[key]) dataParams.append(key, filters[key]);
             });
             
-            const dataResponse = await fetch(`${this.apiBase}/data?${dataParams}`);
-            const dataResult = await dataResponse.json();
+            const dataResponse = await this.makeApiCall(`/data?${dataParams}`);
             
             if (!dataResponse.ok) {
-                throw new Error(dataResult.error || 'Failed to load data');
+                const errorData = await dataResponse.json();
+                throw new Error(errorData.error || `HTTP ${dataResponse.status}: Failed to load data`);
             }
             
-            this.currentData = dataResult.data;
+            const dataResult = await dataResponse.json();
+            this.currentData = dataResult.data || [];
             
-            // Load performance metrics
-            const metricsParams = new URLSearchParams();
-            Object.keys(filters).forEach(key => {
-                if (filters[key] && key !== 'start_date' && key !== 'end_date') {
-                    metricsParams.append(key, filters[key]);
-                }
+            // Load metrics (non-blocking)
+            this.loadMetrics(filters).catch(error => {
+                console.warn('Failed to load metrics:', error);
             });
             
-            const metricsResponse = await fetch(`${this.apiBase}/metrics?${metricsParams}`);
-            const metricsResult = await metricsResponse.json();
+            // Load failure analysis (non-blocking)
+            this.loadFailureAnalysis(filters).catch(error => {
+                console.warn('Failed to load failure analysis:', error);
+            });
             
+            // Update charts
+            this.updateCharts();
+            
+            this.showMessage(`Data loaded successfully (${this.currentData.length} records)`, 'success');
+            
+        } catch (error) {
+            console.error('Failed to apply filters:', error);
+            this.showMessage(`Failed to load data: ${error.message}`, 'error');
+            
+            // Clear current data on error
+            this.currentData = [];
+            this.updateCharts();
+        } finally {
+            this.isLoading = false;
+            this.hideLoading();
+        }
+    }
+    
+    async loadMetrics(filters) {
+        try {
+            const metricsParams = new URLSearchParams();
+            if (filters.catchment) metricsParams.append('catchment', filters.catchment);
+            if (filters.parameter) metricsParams.append('parameter', filters.parameter);
+            
+            const metricsResponse = await this.makeApiCall(`/metrics?${metricsParams}`);
             if (metricsResponse.ok) {
-                this.currentMetrics = metricsResult.metrics;
+                const metricsResult = await metricsResponse.json();
+                this.currentMetrics = metricsResult.metrics || [];
                 this.updateMetricsDisplay();
             }
-            
-            // Load failure analysis
+        } catch (error) {
+            console.warn('Metrics loading failed:', error);
+        }
+    }
+    
+    async loadFailureAnalysis(filters) {
+        try {
             const failureParams = new URLSearchParams();
             if (filters.catchment) failureParams.append('catchment', filters.catchment);
             if (filters.start_date) failureParams.append('start_date', filters.start_date);
             if (filters.end_date) failureParams.append('end_date', filters.end_date);
             
-            const failureResponse = await fetch(`${this.apiBase}/failure-analysis?${failureParams}`);
-            const failureResult = await failureResponse.json();
-            
+            const failureResponse = await this.makeApiCall(`/failure-analysis?${failureParams}`);
             if (failureResponse.ok) {
-                this.updateFailureAnalysis(failureResult.failure_analysis);
+                const failureResult = await failureResponse.json();
+                this.updateFailureAnalysis(failureResult.failure_analysis || []);
             }
-            
-            // Update charts
-            this.updateCharts();
-            
-            this.showMessage('Data loaded successfully', 'success');
-            
         } catch (error) {
-            console.error('Failed to apply filters:', error);
-            this.showMessage(error.message || 'Failed to load data', 'error');
-        } finally {
-            this.hideLoading();
+            console.warn('Failure analysis loading failed:', error);
         }
     }
     
     clearFilters() {
-        document.getElementById('catchmentFilter').value = '';
-        document.getElementById('parameterFilter').value = 'GWR';
-        document.getElementById('startDateFilter').value = '';
-        document.getElementById('endDateFilter').value = '';
+        if (this.isLoading) return;
+        
+        const catchmentFilter = document.getElementById('catchmentFilter');
+        const parameterFilter = document.getElementById('parameterFilter');
+        const startDateFilter = document.getElementById('startDateFilter');
+        const endDateFilter = document.getElementById('endDateFilter');
+        
+        if (catchmentFilter) catchmentFilter.value = '';
+        if (parameterFilter) parameterFilter.value = 'GWR';
+        if (startDateFilter) startDateFilter.value = '';
+        if (endDateFilter) endDateFilter.value = '';
         
         this.currentData = null;
         this.currentMetrics = null;
         
         // Clear charts
         Object.values(this.charts).forEach(chart => {
-            if (chart) chart.destroy();
+            if (chart) {
+                try {
+                    chart.destroy();
+                } catch (e) {
+                    console.warn('Error destroying chart:', e);
+                }
+            }
         });
         this.initCharts();
         
         // Clear metrics
-        document.getElementById('reliabilityMetric').textContent = '-';
-        document.getElementById('resilienceMetric').textContent = '-';
-        document.getElementById('vulnerabilityMetric').textContent = '-';
-        document.getElementById('sustainabilityMetric').textContent = '-';
+        this.clearMetricsDisplay();
         
         // Clear failure analysis
-        document.getElementById('failureAnalysisTable').innerHTML = 
-            '<p class="text-gray-500 text-center py-8">No failure analysis data available. Please upload and process data first.</p>';
+        const failureTable = document.getElementById('failureAnalysisTable');
+        if (failureTable) {
+            failureTable.innerHTML = '<p class="text-gray-500 text-center py-8">No failure analysis data available. Please upload and process data first.</p>';
+        }
+        
+        this.showMessage('Filters cleared', 'info');
+    }
+    
+    clearMetricsDisplay() {
+        const metrics = ['reliabilityMetric', 'resilienceMetric', 'vulnerabilityMetric', 'sustainabilityMetric'];
+        metrics.forEach(metricId => {
+            const element = document.getElementById(metricId);
+            if (element) element.textContent = '-';
+        });
     }
     
     updateMetricsDisplay() {
-        if (!this.currentMetrics || this.currentMetrics.length === 0) {
+        if (!this.currentMetrics || !Array.isArray(this.currentMetrics) || this.currentMetrics.length === 0) {
             return;
         }
         
@@ -324,28 +529,40 @@ class GroundwaterApp {
             sustainability: 0
         };
         
+        let validCount = 0;
+        
         this.currentMetrics.forEach(metric => {
-            avgMetrics.reliability += metric.reliability || 0;
-            avgMetrics.resilience += metric.resilience || 0;
-            avgMetrics.vulnerability += metric.vulnerability || 0;
-            avgMetrics.sustainability += metric.sustainability || 0;
+            if (metric && typeof metric === 'object') {
+                avgMetrics.reliability += metric.reliability || 0;
+                avgMetrics.resilience += metric.resilience || 0;
+                avgMetrics.vulnerability += metric.vulnerability || 0;
+                avgMetrics.sustainability += metric.sustainability || 0;
+                validCount++;
+            }
         });
         
-        const count = this.currentMetrics.length;
-        Object.keys(avgMetrics).forEach(key => {
-            avgMetrics[key] = (avgMetrics[key] / count).toFixed(3);
-        });
-        
-        document.getElementById('reliabilityMetric').textContent = avgMetrics.reliability;
-        document.getElementById('resilienceMetric').textContent = avgMetrics.resilience;
-        document.getElementById('vulnerabilityMetric').textContent = avgMetrics.vulnerability;
-        document.getElementById('sustainabilityMetric').textContent = avgMetrics.sustainability;
+        if (validCount > 0) {
+            Object.keys(avgMetrics).forEach(key => {
+                avgMetrics[key] = (avgMetrics[key] / validCount).toFixed(3);
+            });
+            
+            const reliabilityEl = document.getElementById('reliabilityMetric');
+            const resilienceEl = document.getElementById('resilienceMetric');
+            const vulnerabilityEl = document.getElementById('vulnerabilityMetric');
+            const sustainabilityEl = document.getElementById('sustainabilityMetric');
+            
+            if (reliabilityEl) reliabilityEl.textContent = avgMetrics.reliability;
+            if (resilienceEl) resilienceEl.textContent = avgMetrics.resilience;
+            if (vulnerabilityEl) vulnerabilityEl.textContent = avgMetrics.vulnerability;
+            if (sustainabilityEl) sustainabilityEl.textContent = avgMetrics.sustainability;
+        }
     }
     
     updateFailureAnalysis(failureData) {
         const container = document.getElementById('failureAnalysisTable');
+        if (!container) return;
         
-        if (!failureData || failureData.length === 0) {
+        if (!failureData || !Array.isArray(failureData) || failureData.length === 0) {
             container.innerHTML = '<p class="text-gray-500 text-center py-8">No failure analysis data available.</p>';
             return;
         }
@@ -369,15 +586,16 @@ class GroundwaterApp {
         
         failureData.forEach(row => {
             const totalFailures = (row.gwr_failures || 0) + (row.gwl_failures || 0) + (row.gwb_failures || 0);
-            const failureRate = row.total_records > 0 ? 
-                ((totalFailures / (row.total_records * 3)) * 100).toFixed(1) : '0.0';
+            const totalRecords = row.total_records || 0;
+            const failureRate = totalRecords > 0 ? 
+                ((totalFailures / (totalRecords * 3)) * 100).toFixed(1) : '0.0';
             
             html += `
                 <tr class="border-b hover:bg-gray-50">
-                    <td class="px-4 py-2">${row.catchment_name}</td>
-                    <td class="px-4 py-2">${row.year}</td>
-                    <td class="px-4 py-2">${row.month}</td>
-                    <td class="px-4 py-2">${row.total_records}</td>
+                    <td class="px-4 py-2">${row.catchment_name || 'Unknown'}</td>
+                    <td class="px-4 py-2">${row.year || 'N/A'}</td>
+                    <td class="px-4 py-2">${row.month || 'N/A'}</td>
+                    <td class="px-4 py-2">${totalRecords}</td>
                     <td class="px-4 py-2">${row.gwr_failures || 0}</td>
                     <td class="px-4 py-2">${row.gwl_failures || 0}</td>
                     <td class="px-4 py-2">${row.gwb_failures || 0}</td>
@@ -391,16 +609,32 @@ class GroundwaterApp {
     }
     
     initCharts() {
-        // Initialize empty charts
-        this.initTimeSeriesChart();
-        this.initClassificationChart();
+        // Initialize empty charts with error handling
+        try {
+            this.initTimeSeriesChart();
+        } catch (error) {
+            console.error('Failed to initialize time series chart:', error);
+        }
+        
+        try {
+            this.initClassificationChart();
+        } catch (error) {
+            console.error('Failed to initialize classification chart:', error);
+        }
     }
     
     initTimeSeriesChart() {
-        const ctx = document.getElementById('timeSeriesChart').getContext('2d');
+        const canvas = document.getElementById('timeSeriesChart');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
         
         if (this.charts.timeSeries) {
-            this.charts.timeSeries.destroy();
+            try {
+                this.charts.timeSeries.destroy();
+            } catch (e) {
+                console.warn('Error destroying existing chart:', e);
+            }
         }
         
         this.charts.timeSeries = new Chart(ctx, {
@@ -412,14 +646,16 @@ class GroundwaterApp {
                     data: [],
                     borderColor: '#3b82f6',
                     backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.4
+                    tension: 0.4,
+                    pointRadius: 2
                 }, {
                     label: 'Z-scores',
                     data: [],
                     borderColor: '#ef4444',
                     backgroundColor: 'rgba(239, 68, 68, 0.1)',
                     tension: 0.4,
-                    yAxisID: 'y1'
+                    yAxisID: 'y1',
+                    pointRadius: 2
                 }]
             },
             options: {
@@ -472,10 +708,17 @@ class GroundwaterApp {
     }
     
     initClassificationChart() {
-        const ctx = document.getElementById('classificationChart').getContext('2d');
+        const canvas = document.getElementById('classificationChart');
+        if (!canvas) return;
+        
+        const ctx = canvas.getContext('2d');
         
         if (this.charts.classification) {
-            this.charts.classification.destroy();
+            try {
+                this.charts.classification.destroy();
+            } catch (e) {
+                console.warn('Error destroying existing chart:', e);
+            }
         }
         
         this.charts.classification = new Chart(ctx, {
@@ -512,45 +755,64 @@ class GroundwaterApp {
     }
     
     updateCharts() {
-        if (!this.currentData || this.currentData.length === 0) {
+        if (!this.currentData || !Array.isArray(this.currentData) || this.currentData.length === 0) {
             return;
         }
         
-        // Update time series chart
-        this.updateTimeSeriesChart();
+        try {
+            this.updateTimeSeriesChart();
+        } catch (error) {
+            console.error('Failed to update time series chart:', error);
+        }
         
-        // Update classification chart
-        this.updateClassificationChart();
+        try {
+            this.updateClassificationChart();
+        } catch (error) {
+            console.error('Failed to update classification chart:', error);
+        }
     }
     
     updateTimeSeriesChart() {
-        if (!this.charts.timeSeries) return;
+        if (!this.charts.timeSeries || !this.currentData) return;
         
-        const sortedData = this.currentData.sort((a, b) => new Date(a.measurement_date) - new Date(b.measurement_date));
+        const sortedData = [...this.currentData]
+            .filter(item => item.measurement_date)
+            .sort((a, b) => new Date(a.measurement_date) - new Date(b.measurement_date));
         
-        const labels = sortedData.map(item => new Date(item.measurement_date).toLocaleDateString());
-        const originalValues = sortedData.map(item => item.original_value);
-        const zScores = sortedData.map(item => item.zscore);
+        const labels = sortedData.map(item => {
+            const date = new Date(item.measurement_date);
+            return isNaN(date.getTime()) ? 'Invalid Date' : date.toLocaleDateString();
+        });
+        
+        const originalValues = sortedData.map(item => 
+            typeof item.original_value === 'number' ? item.original_value : null
+        );
+        
+        const zScores = sortedData.map(item => 
+            typeof item.zscore === 'number' ? item.zscore : null
+        );
         
         this.charts.timeSeries.data.labels = labels;
         this.charts.timeSeries.data.datasets[0].data = originalValues;
         this.charts.timeSeries.data.datasets[1].data = zScores;
         
         // Update dataset labels based on parameter
-        const parameter = document.getElementById('parameterFilter').value;
+        const parameterFilter = document.getElementById('parameterFilter');
+        const parameter = parameterFilter ? parameterFilter.value : 'GWR';
+        
         const parameterLabels = {
             'GWR': 'Groundwater Recharge (mm)',
             'GWL': 'Groundwater Level (m)',
             'GWB': 'Groundwater Baseflow (m³/s)'
         };
         
-        this.charts.timeSeries.data.datasets[0].label = parameterLabels[parameter];
+        this.charts.timeSeries.data.datasets[0].label = parameterLabels[parameter] || 'Original Values';
         
         this.charts.timeSeries.update();
     }
     
     updateClassificationChart() {
-        if (!this.charts.classification) return;
+        if (!this.charts.classification || !this.currentData) return;
         
         // Count classifications
         const classificationCounts = {
@@ -562,8 +824,9 @@ class GroundwaterApp {
         };
         
         this.currentData.forEach(item => {
-            if (item.classification && classificationCounts.hasOwnProperty(item.classification)) {
-                classificationCounts[item.classification]++;
+            const classification = item.classification;
+            if (classification && classificationCounts.hasOwnProperty(classification)) {
+                classificationCounts[classification]++;
             }
         });
         
@@ -579,11 +842,13 @@ class GroundwaterApp {
     }
     
     async exportData() {
+        if (this.isLoading) return;
+        
         const filters = {
-            catchment: document.getElementById('catchmentFilter').value,
-            parameter: document.getElementById('parameterFilter').value,
-            start_date: document.getElementById('startDateFilter').value,
-            end_date: document.getElementById('endDateFilter').value
+            catchment: this.getElementValue('catchmentFilter'),
+            parameter: this.getElementValue('parameterFilter'),
+            start_date: this.getElementValue('startDateFilter'),
+            end_date: this.getElementValue('endDateFilter')
         };
         
         const params = new URLSearchParams();
@@ -594,7 +859,7 @@ class GroundwaterApp {
         try {
             this.showLoading('Preparing export...');
             
-            const response = await fetch(`${this.apiBase}/export?${params}`);
+            const response = await this.makeApiCall(`/export?${params}`);
             
             if (!response.ok) {
                 const error = await response.json();
@@ -616,124 +881,108 @@ class GroundwaterApp {
             
         } catch (error) {
             console.error('Export failed:', error);
-            this.showMessage(error.message || 'Export failed', 'error');
+            this.showMessage(`Export failed: ${error.message}`, 'error');
         } finally {
             this.hideLoading();
         }
     }
     
     async viewSource(sourceId) {
-        // Set filters to show data from this source
-        document.getElementById('catchmentFilter').value = '';
-        document.getElementById('parameterFilter').value = 'GWR';
-        document.getElementById('startDateFilter').value = '';
-        document.getElementById('endDateFilter').value = '';
-        
-        try {
-            const response = await fetch(`${this.apiBase}/data?source_id=${sourceId}`);
-            const result = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(result.error || 'Failed to load source data');
-            }
-            
-            this.currentData = result.data;
-            this.updateCharts();
-            
-            this.showMessage(`Viewing data from source ID ${sourceId}`, 'info');
-            
-        } catch (error) {
-            console.error('Failed to view source:', error);
-            this.showMessage(error.message || 'Failed to load source data', 'error');
-        }
-    }
-    
-    async deleteSource(sourceId) {
-        if (!confirm('Are you sure you want to delete this data source? This action cannot be undone.')) {
+        if (!sourceId || this.isLoading) {
+            this.showMessage('Invalid source ID or system is busy', 'error');
             return;
         }
         
         try {
-            const response = await fetch(`${this.apiBase}/sources/${sourceId}`, {
-                method: 'DELETE'
-            });
+            this.showLoading('Loading source data...');
+            
+            const response = await this.makeApiCall(`/data?source_id=${sourceId}`);
             
             if (!response.ok) {
-                const error = await response.json();
-                throw new Error(error.error || 'Failed to delete source');
+                const errorData = await response.json();
+                throw new Error(errorData.error || `Failed to load source data (HTTP ${response.status})`);
             }
             
-            await this.loadDataSources();
-            await this.loadCatchments();
+            const result = await response.json();
             
-            this.showMessage('Data source deleted successfully', 'success');
+            if (!result.data || !Array.isArray(result.data)) {
+                throw new Error('No data available for this source');
+            }
+            
+            // Reset filters to show all data from this source
+            const catchmentFilter = document.getElementById('catchmentFilter');
+            const parameterFilter = document.getElementById('parameterFilter');
+            const startDateFilter = document.getElementById('startDateFilter');
+            const endDateFilter = document.getElementById('endDateFilter');
+            
+            if (catchmentFilter) catchmentFilter.value = '';
+            if (parameterFilter) parameterFilter.value = 'GWR';
+            if (startDateFilter) startDateFilter.value = '';
+            if (endDateFilter) endDateFilter.value = '';
+            
+            this.currentData = result.data;
+            this.updateCharts();
+            
+            this.showMessage(`Viewing ${result.data.length} records from source ID ${sourceId}`, 'info');
             
         } catch (error) {
-            console.error('Failed to delete source:', error);
-            this.showMessage(error.message || 'Failed to delete source', 'error');
+            console.error('Failed to view source:', error);
+            this.showMessage(`Failed to load source data: ${error.message}`, 'error');
+        } finally {
+            this.hideLoading();
         }
     }
     
-    showThresholdModal() {
-        document.getElementById('thresholdModal').classList.remove('hidden');
-        document.getElementById('thresholdModal').classList.add('flex');
-    }
-    
-    hideThresholdModal() {
-        document.getElementById('thresholdModal').classList.add('hidden');
-        document.getElementById('thresholdModal').classList.remove('flex');
-    }
-    
-    showLoading(message = 'Loading...') {
-        document.getElementById('loadingText').textContent = message;
-        document.getElementById('loadingOverlay').style.display = 'flex';
-    }
-    
-    hideLoading() {
-        document.getElementById('loadingOverlay').style.display = 'none';
-    }
-    
-    showMessage(message, type = 'info') {
-        const container = document.getElementById('messageContainer');
-        
-        const messageEl = document.createElement('div');
-        messageEl.className = `mb-4 p-4 rounded-lg shadow-lg transition-all duration-300 transform translate-x-full`;
-        
-        const colors = {
-            success: 'bg-green-100 text-green-800 border border-green-200',
-            error: 'bg-red-100 text-red-800 border border-red-200',
-            warning: 'bg-yellow-100 text-yellow-800 border border-yellow-200',
-            info: 'bg-blue-100 text-blue-800 border border-blue-200'
-        };
-        
-        messageEl.className += ` ${colors[type] || colors.info}`;
-        messageEl.innerHTML = `
-            <div class="flex items-center justify-between">
-                <span>${message}</span>
-                <button class="ml-4 text-lg font-bold opacity-70 hover:opacity-100" onclick="this.parentElement.parentElement.remove()">×</button>
-            </div>
-        `;
-        
-        container.appendChild(messageEl);
-        
-        // Animate in
-        setTimeout(() => {
-            messageEl.classList.remove('translate-x-full');
-        }, 100);
-        
-        // Auto-remove after 5 seconds
-        setTimeout(() => {
-            if (messageEl.parentElement) {
-                messageEl.classList.add('translate-x-full');
-                setTimeout(() => {
-                    if (messageEl.parentElement) {
-                        messageEl.remove();
-                    }
-                }, 300);
-            }
-        }, 5000);
-    }
+   
 }
 
-// Initialize the application
-const app = new GroundwaterApp();
+// Global error handler for unhandled promise rejections
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('Unhandled promise rejection:', event.reason);
+    if (window.app) {
+        window.app.showMessage('An unexpected error occurred. Please refresh the page.', 'error');
+    }
+    event.preventDefault();
+});
+
+// Global error handler for JavaScript errors
+window.addEventListener('error', function(event) {
+    console.error('JavaScript error:', event.error);
+    if (window.app) {
+        window.app.showMessage('A JavaScript error occurred. Please refresh the page.', 'error');
+    }
+});
+
+// Initialize the application when DOM is loaded
+document.addEventListener('DOMContentLoaded', function() {
+    try {
+        // Only initialize once
+        if (window.app) {
+            console.warn('App already exists, skipping initialization');
+            return;
+        }
+        
+        window.app = new GroundwaterApp();
+        
+        // Add global reference for debugging
+        if (typeof window !== 'undefined') {
+            window.groundwaterApp = window.app;
+        }
+        
+    } catch (error) {
+        console.error('Failed to initialize application:', error);
+        document.body.innerHTML += `
+            <div class="fixed top-4 right-4 bg-red-100 border border-red-400 text-red-700 px-4 py-3 rounded z-50">
+                <strong>Application Error:</strong> Failed to initialize. Please refresh the page.
+            </div>
+        `;
+    }
+});
+
+// Prevent multiple initializations
+let appInitialized = false;
+
+// Export for module usage if needed
+if (typeof module !== 'undefined' && module.exports) {
+    module.exports = GroundwaterApp;
+}
