@@ -10909,3 +10909,160 @@ pyodbc.DataError: ('22007', '[22007] [Microsoft][ODBC Driver 17 for SQL Server][
 2025-09-08 03:22:00,611 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:00] "OPTIONS /api/sources HTTP/1.1" 200 -
 2025-09-08 03:22:01,046 - INFO -  * Detected change in 'C:\\Users\\sbusi\\OneDrive\\Desktop\\Groundwater-Analysis-System\\backend\\app.py', reloading
 2025-09-08 03:22:01,228 - INFO -  * Restarting with stat
+2025-09-08 03:22:03,765 - INFO - Starting Groundwater Analysis API Server
+2025-09-08 03:22:03,831 - WARNING -  * Debugger is active!
+2025-09-08 03:22:03,843 - INFO -  * Debugger PIN: 144-158-023
+2025-09-08 03:22:03,907 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:03] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:22:03,911 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:03] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:22:04,748 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:04] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:22:04,996 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:04] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:22:05,163 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:05] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:22:32,926 - INFO - Data request received: catchment=Crocodile, parameter=GWL, start_date=None, end_date=None, source_id=None
+2025-09-08 03:22:32,927 - INFO - Mapped parameter 'GWL' to database category 'gwlevel'
+2025-09-08 03:22:32,927 - INFO - Executing query: 
+        SELECT rd.measurement_date, 
+               c.catchment_name, 
+               rd.source_id,
+               rd.category,
+               CASE 
+                   WHEN rd.category = 'gwlevel' THEN rd.gw_level
+                   WHEN rd.category = 'recharge' THEN rd.recharge_converted
+                   WHEN rd.category = 'baseflow' THEN rd.baseflow_value
+                   ELSE NULL
+               END as original_value,
+               CASE 
+                   WHEN rd.category = 'gwlevel' THEN rd.standardized_gw_level
+                   WHEN rd.category = 'recharge' THEN rd.drought_index_recharge
+                   WHEN rd.category = 'baseflow' THEN rd.standardized_baseflow
+                   ELSE NULL
+               END as zscore_value,
+               CASE 
+                   WHEN rd.category = 'gwlevel' THEN rd.average_gw_level
+                   WHEN rd.category = 'recharge' THEN rd.average_recharge
+                   WHEN rd.category = 'baseflow' THEN rd.average_baseflow
+                   ELSE NULL
+               END as average_value
+        FROM dbo.RawData rd
+        INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
+        WHERE 1=1
+         AND rd.category = ? AND c.catchment_name = ? ORDER BY rd.measurement_date DESC OFFSET 0 ROWS FETCH NEXT 1000 ROWS ONLY
+2025-09-08 03:22:32,928 - INFO - With parameters: ['gwlevel', 'Crocodile']
+2025-09-08 03:22:32,980 - INFO - Successfully retrieved 684 records
+2025-09-08 03:22:32,988 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:32] "GET /api/data?catchment=Crocodile&parameter=GWL HTTP/1.1" 200 -
+2025-09-08 03:22:33,263 - ERROR - Failed to serve static file favicon.ico: 404 Not Found: The requested URL was not found on the server. If you entered the URL manually please check your spelling and try again.
+2025-09-08 03:22:33,264 - INFO - 127.0.0.1 - - [08/Sep/2025 03:22:33] "[33mGET /favicon.ico HTTP/1.1[0m" 404 -
+2025-09-08 03:23:22,536 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:22] "GET /api/filter-options HTTP/1.1" 200 -
+2025-09-08 03:23:55,465 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:55] "OPTIONS /api/sources/1 HTTP/1.1" 200 -
+2025-09-08 03:23:55,834 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:55] "DELETE /api/sources/1 HTTP/1.1" 200 -
+2025-09-08 03:23:55,847 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:55] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:23:56,170 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:56] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:23:56,416 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:56] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:23:56,547 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:56] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:23:58,715 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:58] "OPTIONS /api/sources/2 HTTP/1.1" 200 -
+2025-09-08 03:23:59,116 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:59] "DELETE /api/sources/2 HTTP/1.1" 200 -
+2025-09-08 03:23:59,290 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:59] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:23:59,498 - INFO - 127.0.0.1 - - [08/Sep/2025 03:23:59] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:24:01,557 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:01] "OPTIONS /api/sources/3 HTTP/1.1" 200 -
+2025-09-08 03:24:01,909 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:01] "DELETE /api/sources/3 HTTP/1.1" 200 -
+2025-09-08 03:24:02,129 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:02] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:24:02,239 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:02] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:24:02,443 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:02] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:24:02,607 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:02] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:24:13,019 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:13] "OPTIONS /api/data?catchment=Crocodile&parameter=GWL HTTP/1.1" 200 -
+2025-09-08 03:24:13,344 - INFO - Data request received: catchment=Crocodile, parameter=GWL, start_date=None, end_date=None, source_id=None
+2025-09-08 03:24:13,345 - INFO - Mapped parameter 'GWL' to database category 'gwlevel'
+2025-09-08 03:24:13,346 - INFO - Executing query: 
+        SELECT rd.measurement_date, 
+               c.catchment_name, 
+               rd.source_id,
+               rd.category,
+               CASE 
+                   WHEN rd.category = 'gwlevel' THEN rd.gw_level
+                   WHEN rd.category = 'recharge' THEN rd.recharge_converted
+                   WHEN rd.category = 'baseflow' THEN rd.baseflow_value
+                   ELSE NULL
+               END as original_value,
+               CASE 
+                   WHEN rd.category = 'gwlevel' THEN rd.standardized_gw_level
+                   WHEN rd.category = 'recharge' THEN rd.drought_index_recharge
+                   WHEN rd.category = 'baseflow' THEN rd.standardized_baseflow
+                   ELSE NULL
+               END as zscore_value,
+               CASE 
+                   WHEN rd.category = 'gwlevel' THEN rd.average_gw_level
+                   WHEN rd.category = 'recharge' THEN rd.average_recharge
+                   WHEN rd.category = 'baseflow' THEN rd.average_baseflow
+                   ELSE NULL
+               END as average_value
+        FROM dbo.RawData rd
+        INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
+        WHERE 1=1
+         AND rd.category = ? AND c.catchment_name = ? ORDER BY rd.measurement_date DESC OFFSET 0 ROWS FETCH NEXT 1000 ROWS ONLY
+2025-09-08 03:24:13,347 - INFO - With parameters: ['gwlevel', 'Crocodile']
+2025-09-08 03:24:13,384 - INFO - Successfully retrieved 171 records
+2025-09-08 03:24:13,389 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:13] "GET /api/data?catchment=Crocodile&parameter=GWL HTTP/1.1" 200 -
+2025-09-08 03:24:13,584 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:13] "OPTIONS /api/metrics?catchment=Crocodile&parameter=GWL HTTP/1.1" 200 -
+2025-09-08 03:24:13,713 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:13] "OPTIONS /api/failure-analysis?catchment=Crocodile HTTP/1.1" 200 -
+2025-09-08 03:24:13,737 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:13] "GET /api/metrics?catchment=Crocodile&parameter=GWL HTTP/1.1" 200 -
+2025-09-08 03:24:13,897 - ERROR - Query execution failed: ('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'vw_FailureAnalysis'. (208) (SQLExecDirectW); [42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Statement(s) could not be prepared. (8180)")
+2025-09-08 03:24:13,898 - ERROR - Failed to get failure analysis: ('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'vw_FailureAnalysis'. (208) (SQLExecDirectW); [42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Statement(s) could not be prepared. (8180)")
+2025-09-08 03:24:13,901 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:13] "[35m[1mGET /api/failure-analysis?catchment=Crocodile HTTP/1.1[0m" 500 -
+2025-09-08 03:24:14,921 - ERROR - Query execution failed: ('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'vw_FailureAnalysis'. (208) (SQLExecDirectW); [42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Statement(s) could not be prepared. (8180)")
+2025-09-08 03:24:14,923 - ERROR - Failed to get failure analysis: ('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'vw_FailureAnalysis'. (208) (SQLExecDirectW); [42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Statement(s) could not be prepared. (8180)")
+2025-09-08 03:24:14,927 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:14] "[35m[1mGET /api/failure-analysis?catchment=Crocodile HTTP/1.1[0m" 500 -
+2025-09-08 03:24:17,263 - ERROR - Query execution failed: ('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'vw_FailureAnalysis'. (208) (SQLExecDirectW); [42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Statement(s) could not be prepared. (8180)")
+2025-09-08 03:24:17,264 - ERROR - Failed to get failure analysis: ('42S02', "[42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Invalid object name 'vw_FailureAnalysis'. (208) (SQLExecDirectW); [42S02] [Microsoft][ODBC Driver 17 for SQL Server][SQL Server]Statement(s) could not be prepared. (8180)")
+2025-09-08 03:24:17,267 - INFO - 127.0.0.1 - - [08/Sep/2025 03:24:17] "[35m[1mGET /api/failure-analysis?catchment=Crocodile HTTP/1.1[0m" 500 -
+2025-09-08 03:40:14,940 - INFO - 127.0.0.1 - - [08/Sep/2025 03:40:14] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:40:15,221 - INFO - Excel columns found: ['Date (Months)', 'Baseflow', 'Average Baseflow', 'STDEV', 'Unnamed: 4', 'Standardized Baseflow']
+2025-09-08 03:40:15,234 - INFO - 127.0.0.1 - - [08/Sep/2025 03:40:15] "[31m[1mPOST /api/upload HTTP/1.1[0m" 400 -
+2025-09-08 03:40:15,393 - INFO - 127.0.0.1 - - [08/Sep/2025 03:40:15] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:40:15,698 - INFO - 127.0.0.1 - - [08/Sep/2025 03:40:15] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:40:15,723 - INFO - 127.0.0.1 - - [08/Sep/2025 03:40:15] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:40:16,048 - INFO - 127.0.0.1 - - [08/Sep/2025 03:40:16] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:44:57,028 - INFO - 127.0.0.1 - - [08/Sep/2025 03:44:57] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:44:57,260 - INFO - 127.0.0.1 - - [08/Sep/2025 03:44:57] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:44:57,375 - INFO - 127.0.0.1 - - [08/Sep/2025 03:44:57] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:44:57,570 - INFO - 127.0.0.1 - - [08/Sep/2025 03:44:57] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:44:57,700 - INFO - 127.0.0.1 - - [08/Sep/2025 03:44:57] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:45:12,840 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:12] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:45:13,409 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:13] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:45:13,669 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:13] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:45:13,719 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:13] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:45:13,993 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:13] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:45:33,582 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:33] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:45:34,103 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:34] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:45:34,336 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:34] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:45:34,452 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:34] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:45:34,660 - INFO - 127.0.0.1 - - [08/Sep/2025 03:45:34] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:46:30,293 - INFO - 127.0.0.1 - - [08/Sep/2025 03:46:30] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:46:30,688 - INFO - 127.0.0.1 - - [08/Sep/2025 03:46:30] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:46:31,014 - INFO - 127.0.0.1 - - [08/Sep/2025 03:46:31] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:46:31,027 - INFO - 127.0.0.1 - - [08/Sep/2025 03:46:31] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:46:31,352 - INFO - 127.0.0.1 - - [08/Sep/2025 03:46:31] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:48:01,966 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:01] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:48:02,209 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:02] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:48:02,289 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:02] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:48:02,525 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:02] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:48:02,608 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:02] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:48:19,141 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:19] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:48:19,364 - INFO -  * Detected change in 'C:\\Users\\sbusi\\OneDrive\\Desktop\\Groundwater-Analysis-System\\backend\\advanced_calculations.py', reloading
+2025-09-08 03:48:19,553 - INFO -  * Restarting with stat
+2025-09-08 03:48:21,220 - INFO - Starting Groundwater Analysis API Server
+2025-09-08 03:48:21,244 - WARNING -  * Debugger is active!
+2025-09-08 03:48:21,248 - INFO -  * Debugger PIN: 144-158-023
+2025-09-08 03:48:21,270 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:21] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:48:21,282 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:21] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:48:21,623 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:21] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:48:21,857 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:21] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:48:21,947 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:21] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:48:30,059 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:30] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:48:30,545 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:30] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:48:30,812 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:30] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:48:30,858 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:30] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:48:31,162 - INFO - 127.0.0.1 - - [08/Sep/2025 03:48:31] "GET /api/sources HTTP/1.1" 200 -
+2025-09-08 03:49:11,063 - INFO - 127.0.0.1 - - [08/Sep/2025 03:49:11] "GET /api/health HTTP/1.1" 200 -
+2025-09-08 03:49:11,520 - INFO - 127.0.0.1 - - [08/Sep/2025 03:49:11] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:49:11,801 - INFO - 127.0.0.1 - - [08/Sep/2025 03:49:11] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-08 03:49:11,839 - INFO - 127.0.0.1 - - [08/Sep/2025 03:49:11] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-08 03:49:12,143 - INFO - 127.0.0.1 - - [08/Sep/2025 03:49:12] "GET /api/sources HTTP/1.1" 200 -
