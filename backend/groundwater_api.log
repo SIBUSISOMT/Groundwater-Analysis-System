@@ -12342,3 +12342,13 @@ pyodbc.DataError: ('22007', '[22007] [Microsoft][ODBC Driver 17 for SQL Server][
 2025-09-15 13:51:56,774 - INFO - 127.0.0.1 - - [15/Sep/2025 13:51:56] "GET /api/catchments HTTP/1.1" 200 -
 2025-09-15 13:51:57,020 - INFO - 127.0.0.1 - - [15/Sep/2025 13:51:57] "OPTIONS /api/sources HTTP/1.1" 200 -
 2025-09-15 13:51:57,098 - INFO - 127.0.0.1 - - [15/Sep/2025 13:51:57] "GET /api/sources HTTP/1.1" 200 -
+2025-09-15 13:52:05,373 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:05] "GET /api/health HTTP/1.1" 200 -
+2025-09-15 13:52:05,584 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:05] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-15 13:52:05,726 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:05] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-15 13:52:05,897 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:05] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-15 13:52:06,102 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:06] "GET /api/sources HTTP/1.1" 200 -
+2025-09-15 13:52:24,036 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "GET /api/health HTTP/1.1" 200 -
+2025-09-15 13:52:24,286 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "OPTIONS /api/catchments HTTP/1.1" 200 -
+2025-09-15 13:52:24,373 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "GET /api/catchments HTTP/1.1" 200 -
+2025-09-15 13:52:24,594 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "OPTIONS /api/sources HTTP/1.1" 200 -
+2025-09-15 13:52:24,693 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "GET /api/sources HTTP/1.1" 200 -
