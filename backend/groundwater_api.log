@@ -12262,6 +12262,7 @@ pyodbc.DataError: ('22007', '[22007] [Microsoft][ODBC Driver 17 for SQL Server][
 2025-09-15 13:49:34,527 - INFO - Starting Groundwater Analysis API Server
 2025-09-15 13:49:34,764 - WARNING -  * Debugger is active!
 2025-09-15 13:49:34,777 - INFO -  * Debugger PIN: 138-166-986
+<<<<<<< HEAD
 2025-09-15 13:49:38,143 - INFO - 127.0.0.1 - - [15/Sep/2025 13:49:38] "GET /api/health HTTP/1.1" 200 -
 2025-09-15 13:49:39,772 - INFO - 127.0.0.1 - - [15/Sep/2025 13:49:39] "GET /api/health HTTP/1.1" 200 -
 2025-09-15 13:49:40,030 - INFO - 127.0.0.1 - - [15/Sep/2025 13:49:40] "OPTIONS /api/catchments HTTP/1.1" 200 -
@@ -12352,3 +12353,5 @@ pyodbc.DataError: ('22007', '[22007] [Microsoft][ODBC Driver 17 for SQL Server][
 2025-09-15 13:52:24,373 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "GET /api/catchments HTTP/1.1" 200 -
 2025-09-15 13:52:24,594 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "OPTIONS /api/sources HTTP/1.1" 200 -
 2025-09-15 13:52:24,693 - INFO - 127.0.0.1 - - [15/Sep/2025 13:52:24] "GET /api/sources HTTP/1.1" 200 -
+=======
+>>>>>>> 82e27753936a3016bbe35ea9bc0072cc621def36
