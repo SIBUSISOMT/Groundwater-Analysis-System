@@ -1130,44 +1130,49 @@ def get_filter_options():
     
 @app.route('/api/metrics', methods=['GET'])
 def get_performance_metrics():
-    """Get performance metrics with filters"""
+    """Get performance metrics from PerformanceMetrics table"""
     try:
         catchment_name = request.args.get('catchment')
-        parameter = request.args.get('parameter', 'GWR').upper()
-        source_id = request.args.get('source_id')
+        parameter = request.args.get('parameter')
         
         base_query = """
-        SELECT pm.*, c.catchment_name
+        SELECT 
+            pm.reliability,
+            pm.resilience, 
+            pm.vulnerability,
+            pm.sustainability,
+            c.catchment_name,
+            pm.parameter_type
         FROM dbo.PerformanceMetrics pm
         INNER JOIN dbo.Catchments c ON pm.catchment_id = c.catchment_id
-        WHERE pm.parameter_type = ?
+        WHERE 1=1
         """
         
         conditions = []
-        params = [parameter]
+        params = []
         
         if catchment_name:
             conditions.append("c.catchment_name = ?")
             params.append(catchment_name)
             
-        if source_id:
-            conditions.append("pm.source_id = ?")
-            params.append(int(source_id))
-        
+        if parameter:
+            # Map frontend parameter names to database parameter names
+            param_mapping = {'GWR': 'Recharge', 'GWL': 'GWLevel', 'GWB': 'Baseflow'}
+            db_param = param_mapping.get(parameter, parameter)
+            conditions.append("pm.parameter_type = ?")
+            params.append(db_param)
+            
         if conditions:
             base_query += " AND " + " AND ".join(conditions)
+            
+        base_query += " ORDER BY c.catchment_name, pm.parameter_type"
         
-        base_query += " ORDER BY c.catchment_name, pm.analysis_start_date"
+        metrics = db.execute_query(base_query, tuple(params) if params else None)
         
-        metrics = db.execute_query(base_query, tuple(params))
-        
-        return jsonify({
-            'metrics': metrics,
-            'parameter': parameter
-        })
+        return jsonify({'metrics': metrics})
         
     except Exception as e:
-        logger.error(f"Failed to get metrics: {e}")
+        logger.error(f"Failed to get performance metrics: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/failure-analysis', methods=['GET'])
@@ -1178,8 +1183,19 @@ def get_failure_analysis():
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
         
+        # Use the existing ProcessedData table directly instead of non-existent view
         base_query = """
-        SELECT * FROM vw_FailureAnalysis
+        SELECT 
+            c.catchment_name,
+            YEAR(pd.measurement_date) as year,
+            MONTH(pd.measurement_date) as month,
+            COUNT(*) as total_records,
+            SUM(CASE WHEN pd.parameter_type = 'Recharge' AND pd.is_failure = 1 THEN 1 ELSE 0 END) as gwr_failures,
+            SUM(CASE WHEN pd.parameter_type = 'GWLevel' AND pd.is_failure = 1 THEN 1 ELSE 0 END) as gwl_failures,
+            SUM(CASE WHEN pd.parameter_type = 'Baseflow' AND pd.is_failure = 1 THEN 1 ELSE 0 END) as gwb_failures,
+            SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) as total_failures
+        FROM dbo.ProcessedData pd
+        INNER JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
         WHERE 1=1
         """
         
@@ -1187,17 +1203,18 @@ def get_failure_analysis():
         params = []
         
         if catchment_name:
-            conditions.append("catchment_name = ?")
+            conditions.append("c.catchment_name = ?")
             params.append(catchment_name)
             
         if start_date and end_date:
-            conditions.append("DATEFROMPARTS(year, month, 1) BETWEEN ? AND ?")
+            conditions.append("pd.measurement_date BETWEEN ? AND ?")
             params.extend([start_date, end_date])
-        
+            
         if conditions:
             base_query += " AND " + " AND ".join(conditions)
-        
-        base_query += " ORDER BY catchment_name, year, month"
+            
+        base_query += " GROUP BY c.catchment_name, YEAR(pd.measurement_date), MONTH(pd.measurement_date)"
+        base_query += " ORDER BY c.catchment_name, YEAR(pd.measurement_date), MONTH(pd.measurement_date)"
         
         analysis = db.execute_query(base_query, tuple(params) if params else None)
         

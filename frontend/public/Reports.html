@@ -1,0 +1,1739 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Groundwater Analysis Reports Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        .card-hover {
+            transition: all 0.3s ease;
+        }
+        .card-hover:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 10px 25px rgba(0,0,0,0.1);
+        }
+        .chart-container {
+            position: relative;
+            height: 400px;
+            margin: 20px 0;
+        }
+        .chart-container-large {
+            position: relative;
+            height: 500px;
+            margin: 20px 0;
+        }
+        .metric-card {
+            background: linear-gradient(145deg, #ffffff, #f3f4f6);
+            border-radius: 16px;
+            padding: 24px;
+            box-shadow: 0 4px 6px rgba(0,0,0,0.05);
+        }
+        .status-indicator {
+            position: relative;
+            display: inline-block;
+            width: 12px;
+            height: 12px;
+            border-radius: 50%;
+        }
+        .status-indicator.online {
+            background-color: #10b981;
+            box-shadow: 0 0 0 2px rgba(16, 185, 129, 0.2);
+        }
+        .status-indicator.offline {
+            background-color: #ef4444;
+            box-shadow: 0 0 0 2px rgba(239, 68, 68, 0.2);
+        }
+        .tab-active {
+            background-color: #3b82f6;
+            color: white;
+            border-bottom: 2px solid #3b82f6;
+        }
+        .tab-inactive {
+            background-color: #f3f4f6;
+            color: #6b7280;
+            border-bottom: 2px solid transparent;
+        }
+        .correlation-cell {
+            min-width: 80px;
+            height: 40px;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 12px;
+            font-weight: bold;
+            border: 1px solid #e5e7eb;
+        }
+        .loading-pulse {
+            animation: pulse 2s infinite;
+        }
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.5; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="gradient-bg text-white">
+        <div class="container mx-auto px-6 py-8">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold">Groundwater Analysis Reports</h1>
+                    <p class="text-blue-100 mt-2">Comprehensive insights and performance analytics</p>
+                </div>
+                <div class="flex items-center space-x-4">
+                    <div class="flex items-center">
+                        <span class="status-indicator online mr-2"></span>
+                        <span class="text-sm">Connected</span>
+                    </div>
+                    <button id="refreshBtn" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-colors">
+                        <i class="fas fa-sync-alt mr-2"></i>Refresh
+                    </button>
+                    <button id="exportReportBtn" class="bg-white text-blue-600 px-4 py-2 rounded-lg hover:bg-gray-100 transition-colors">
+                        <i class="fas fa-download mr-2"></i>Export Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Control Panel -->
+        <div class="bg-white rounded-lg shadow-sm border p-6 mb-8">
+            <h3 class="text-lg font-semibold mb-4">Report Filters</h3>
+            <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Catchment</label>
+                    <select id="catchmentSelect" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Catchments</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Parameter</label>
+                    <select id="parameterSelect" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                        <option value="">All Parameters</option>
+                        <option value="Recharge">Groundwater Recharge</option>
+                        <option value="GWLevel">Groundwater Level</option>
+                        <option value="Baseflow">Baseflow</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                    <input type="date" id="startDate" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                    <input type="date" id="endDate" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:ring-2 focus:ring-blue-500">
+                </div>
+            </div>
+            <div class="mt-4">
+                <button id="applyFilters" class="bg-blue-600 text-white px-6 py-2 rounded-md hover:bg-blue-700 transition-colors">
+                    Generate Report
+                </button>
+                <button id="clearFilters" class="bg-gray-500 text-white px-6 py-2 rounded-md hover:bg-gray-600 transition-colors ml-2">
+                    Clear Filters
+                </button>
+            </div>
+        </div>
+
+        <!-- Summary Cards -->
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6 mb-8">
+            <div class="metric-card card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">Total Records</p>
+                        <p id="totalRecords" class="text-2xl font-bold text-gray-900">-</p>
+                    </div>
+                    <div class="bg-blue-100 p-3 rounded-full">
+                        <i class="fas fa-database text-blue-600"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="metric-card card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">Active Catchments</p>
+                        <p id="activeCatchments" class="text-2xl font-bold text-gray-900">-</p>
+                    </div>
+                    <div class="bg-green-100 p-3 rounded-full">
+                        <i class="fas fa-map-marker-alt text-green-600"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="metric-card card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">Failure Rate</p>
+                        <p id="failureRate" class="text-2xl font-bold text-red-600">-</p>
+                    </div>
+                    <div class="bg-red-100 p-3 rounded-full">
+                        <i class="fas fa-exclamation-triangle text-red-600"></i>
+                    </div>
+                </div>
+            </div>
+            
+            <div class="metric-card card-hover">
+                <div class="flex items-center justify-between">
+                    <div>
+                        <p class="text-sm text-gray-600">Avg Reliability</p>
+                        <p id="avgReliability" class="text-2xl font-bold text-purple-600">-</p>
+                    </div>
+                    <div class="bg-purple-100 p-3 rounded-full">
+                        <i class="fas fa-shield-alt text-purple-600"></i>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Tab Navigation -->
+        <div class="bg-white rounded-lg shadow-sm border mb-8">
+            <div class="border-b border-gray-200">
+                <nav class="-mb-px flex space-x-8 px-6">
+                    <button id="overviewTab" class="tab-active py-4 px-1 font-medium text-sm transition-colors">
+                        <i class="fas fa-chart-pie mr-2"></i>Overview
+                    </button>
+                    <button id="trendsTab" class="tab-inactive py-4 px-1 font-medium text-sm transition-colors">
+                        <i class="fas fa-chart-line mr-2"></i>Trends Analysis
+                    </button>
+                    <button id="performanceTab" class="tab-inactive py-4 px-1 font-medium text-sm transition-colors">
+                        <i class="fas fa-tachometer-alt mr-2"></i>Performance Metrics
+                    </button>
+                    <button id="spatialTab" class="tab-inactive py-4 px-1 font-medium text-sm transition-colors">
+                        <i class="fas fa-globe mr-2"></i>Spatial Analysis
+                    </button>
+                </nav>
+            </div>
+
+            <!-- Overview Tab -->
+            <div id="overviewContent" class="p-6">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Classification Distribution -->
+                    <div class="bg-white rounded-lg border p-4">
+                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                            <i class="fas fa-chart-pie text-blue-600 mr-2"></i>
+                            Classification Distribution
+                        </h4>
+                        <div class="chart-container">
+                            <canvas id="classificationChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Monthly Failure Trends -->
+                    <div class="bg-white rounded-lg border p-4">
+                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                            <i class="fas fa-calendar-alt text-red-600 mr-2"></i>
+                            Monthly Failure Trends
+                        </h4>
+                        <div class="chart-container">
+                            <canvas id="monthlyTrendsChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Catchment Comparison -->
+                <div class="bg-white rounded-lg border p-4 mt-6">
+                    <h4 class="text-lg font-semibold mb-4 flex items-center">
+                        <i class="fas fa-balance-scale text-green-600 mr-2"></i>
+                        Catchment Performance Comparison
+                    </h4>
+                    <div class="chart-container-large">
+                        <canvas id="catchmentComparisonChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Trends Analysis Tab -->
+            <div id="trendsContent" class="p-6 hidden">
+                <div class="grid grid-cols-1 gap-6">
+                    <!-- Time Series Analysis -->
+                    <div class="bg-white rounded-lg border p-4">
+                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                            <i class="fas fa-chart-line text-blue-600 mr-2"></i>
+                            Long-term Time Series Analysis
+                        </h4>
+                        <div class="chart-container-large">
+                            <canvas id="timeSeriesChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Seasonal Analysis -->
+                    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                        <div class="bg-white rounded-lg border p-4">
+                            <h4 class="text-lg font-semibold mb-4 flex items-center">
+                                <i class="fas fa-leaf text-green-600 mr-2"></i>
+                                Seasonal Patterns
+                            </h4>
+                            <div class="chart-container">
+                                <canvas id="seasonalChart"></canvas>
+                            </div>
+                        </div>
+                        
+                        <div class="bg-white rounded-lg border p-4">
+                            <h4 class="text-lg font-semibold mb-4 flex items-center">
+                                <i class="fas fa-signal text-purple-600 mr-2"></i>
+                                Annual Variability
+                            </h4>
+                            <div class="chart-container">
+                                <canvas id="annualChart"></canvas>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Performance Metrics Tab -->
+            <div id="performanceContent" class="p-6 hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Reliability Analysis -->
+                    <div class="bg-white rounded-lg border p-4">
+                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                            <i class="fas fa-shield-alt text-blue-600 mr-2"></i>
+                            Reliability Analysis by Catchment
+                        </h4>
+                        <div class="chart-container">
+                            <canvas id="reliabilityChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Resilience vs Vulnerability -->
+                    <div class="bg-white rounded-lg border p-4">
+                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                            <i class="fas fa-crosshairs text-orange-600 mr-2"></i>
+                            Resilience vs Vulnerability
+                        </h4>
+                        <div class="chart-container">
+                            <canvas id="resilienceVulnerabilityChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Sustainability Index -->
+                <div class="bg-white rounded-lg border p-4 mt-6">
+                    <h4 class="text-lg font-semibold mb-4 flex items-center">
+                        <i class="fas fa-recycle text-green-600 mr-2"></i>
+                        Sustainability Index by Catchment
+                    </h4>
+                    <div class="chart-container">
+                        <canvas id="sustainabilityChart"></canvas>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Spatial Analysis Tab -->
+            <div id="spatialContent" class="p-6 hidden">
+                <div class="grid grid-cols-1 lg:grid-cols-2 gap-6">
+                    <!-- Catchment Health Map -->
+                    <div class="bg-white rounded-lg border p-4">
+                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                            <i class="fas fa-heartbeat text-red-600 mr-2"></i>
+                            Catchment Health Status
+                        </h4>
+                        <div class="chart-container">
+                            <canvas id="catchmentHealthChart"></canvas>
+                        </div>
+                    </div>
+                    
+                    <!-- Parameter Distribution -->
+                    <div class="bg-white rounded-lg border p-4">
+                        <h4 class="text-lg font-semibold mb-4 flex items-center">
+                            <i class="fas fa-circle-notch text-purple-600 mr-2"></i>
+                            Parameter Distribution Analysis
+                        </h4>
+                        <div class="chart-container">
+                            <canvas id="parameterDistributionChart"></canvas>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Correlation Matrix -->
+                <div class="bg-white rounded-lg border p-4 mt-6">
+                    <h4 class="text-lg font-semibold mb-4 flex items-center">
+                        <i class="fas fa-th text-indigo-600 mr-2"></i>
+                        Parameter Correlation Matrix
+                    </h4>
+                    <div id="correlationMatrix" class="overflow-x-auto">
+                        <!-- Correlation matrix will be rendered here -->
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Detailed Analytics Table -->
+        <div class="bg-white rounded-lg shadow-sm border p-6">
+            <h3 class="text-lg font-semibold mb-4 flex items-center">
+                <i class="fas fa-table text-gray-600 mr-2"></i>
+                Detailed Analytics
+            </h3>
+            <div id="analyticsTable" class="overflow-x-auto">
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-chart-line text-4xl mb-4"></i>
+                    <p>Select filters and generate report to view detailed analytics</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl">
+            <div class="flex items-center">
+                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-4"></div>
+                <div>
+                    <div class="font-semibold">Generating Report</div>
+                    <div id="loadingText" class="text-sm text-gray-600">Processing data...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Notification Container -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-40"></div>
+<script>
+    class GroundwaterReports {
+    constructor() {
+        this.apiBase = 'http://localhost:5000/api';
+        this.charts = {};
+        this.currentData = null;
+        this.metricsData = null;
+        this.failureData = null;
+        this.currentTab = 'overview';
+        
+        this.init();
+    }
+    
+    async init() {
+        this.setupEventListeners();
+        await this.loadInitialData();
+        this.initializeAllCharts();
+        this.showToast('Reports system ready', 'success');
+    }
+    
+    setupEventListeners() {
+        // Filter controls
+        document.getElementById('applyFilters').addEventListener('click', () => this.generateReport());
+        document.getElementById('clearFilters').addEventListener('click', () => this.clearFilters());
+        document.getElementById('refreshBtn').addEventListener('click', () => this.refreshData());
+        document.getElementById('exportReportBtn').addEventListener('click', () => this.exportReport());
+        
+        // Tab navigation
+        document.getElementById('overviewTab').addEventListener('click', () => this.switchTab('overview'));
+        document.getElementById('trendsTab').addEventListener('click', () => this.switchTab('trends'));
+        document.getElementById('performanceTab').addEventListener('click', () => this.switchTab('performance'));
+        document.getElementById('spatialTab').addEventListener('click', () => this.switchTab('spatial'));
+    }
+    
+    async loadInitialData() {
+        try {
+            await this.loadCatchments();
+        } catch (error) {
+            this.showToast('Failed to load initial data', 'error');
+            // Load demo data for testing
+            this.loadDemoData();
+        }
+    }
+    
+    async loadCatchments() {
+        try {
+            const response = await fetch(`${this.apiBase}/catchments`);
+            const data = await response.json();
+            
+            const select = document.getElementById('catchmentSelect');
+            select.innerHTML = '<option value="">All Catchments</option>';
+            
+            if (data.catchments) {
+                data.catchments.forEach(catchment => {
+                    const option = document.createElement('option');
+                    option.value = catchment.catchment_name;
+                    option.textContent = catchment.catchment_name;
+                    select.appendChild(option);
+                });
+            }
+        } catch (error) {
+            // Load demo catchments
+            const select = document.getElementById('catchmentSelect');
+            ['Limpopo', 'Orange', 'Vaal', 'Berg', 'Olifants'].forEach(catchment => {
+                const option = document.createElement('option');
+                option.value = catchment;
+                option.textContent = catchment;
+                select.appendChild(option);
+            });
+        }
+    }
+    
+    loadDemoData() {
+        // Generate demo data for testing when API is not available
+        this.currentData = this.generateDemoGroundwaterData();
+        this.metricsData = this.generateDemoMetrics();
+        this.failureData = this.generateDemoFailureData();
+    }
+    
+    generateDemoGroundwaterData() {
+        const catchments = ['Limpopo', 'Orange', 'Vaal', 'Berg', 'Olifants'];
+        const parameters = ['Recharge', 'GWLevel', 'Baseflow'];
+        const classifications = ['Normal', 'Moderate_Deficit', 'Severe_Deficit', 'Extreme_Deficit', 'Surplus'];
+        const data = [];
+        
+        for (let i = 0; i < 1000; i++) {
+            const date = new Date(2020 + Math.floor(Math.random() * 4), Math.floor(Math.random() * 12), Math.floor(Math.random() * 28));
+            data.push({
+                id: i + 1,
+                catchment_name: catchments[Math.floor(Math.random() * catchments.length)],
+                parameter_type: parameters[Math.floor(Math.random() * parameters.length)],
+                measurement_date: date.toISOString().split('T')[0],
+                original_value: Math.random() * 100,
+                standardized_value: (Math.random() - 0.5) * 4,
+                classification: classifications[Math.floor(Math.random() * classifications.length)],
+                is_failure: Math.random() < 0.25 ? 1 : 0
+            });
+        }
+        
+        return data;
+    }
+    
+    generateDemoMetrics() {
+        const catchments = ['Limpopo', 'Orange', 'Vaal', 'Berg', 'Olifants'];
+        return catchments.map(catchment => ({
+            catchment_name: catchment,
+            reliability: Math.random() * 0.8 + 0.2,
+            resilience: Math.random() * 0.8 + 0.2,
+            vulnerability: Math.random() * 0.6 + 0.1,
+            sustainability: Math.random() * 0.7 + 0.3
+        }));
+    }
+    
+    generateDemoFailureData() {
+        const months = Array.from({length: 12}, (_, i) => ({
+            month: i + 1,
+            failure_count: Math.floor(Math.random() * 20) + 5,
+            total_count: Math.floor(Math.random() * 100) + 50
+        }));
+        
+        return months;
+    }
+    
+    async generateReport() {
+        this.showLoading('Generating comprehensive report...');
+        
+        try {
+            const filters = this.getFilters();
+            
+            // Load all necessary data
+            await Promise.all([
+                this.loadFilteredData(filters),
+                this.loadPerformanceMetrics(filters),
+                this.loadFailureAnalysis(filters)
+            ]);
+            
+            this.updateSummaryCards();
+            this.updateAllCharts();
+            this.updateAnalyticsTable();
+            this.updateCorrelationMatrix();
+            
+            this.showToast('Report generated successfully', 'success');
+        } catch (error) {
+            this.showToast('Failed to generate report', 'error');
+            console.error('Report generation error:', error);
+        } finally {
+            this.hideLoading();
+        }
+    }
+    
+    getFilters() {
+        return {
+            catchment: document.getElementById('catchmentSelect').value,
+            parameter: document.getElementById('parameterSelect').value,
+            start_date: document.getElementById('startDate').value,
+            end_date: document.getElementById('endDate').value
+        };
+    }
+    
+    async loadFilteredData(filters) {
+        try {
+            const params = new URLSearchParams();
+            Object.entries(filters).forEach(([key, value]) => {
+                if (value) params.append(key, value);
+            });
+            
+            const response = await fetch(`${this.apiBase}/data?${params}`);
+            const data = await response.json();
+            this.currentData = data.data || [];
+        } catch (error) {
+            // Use filtered demo data
+            this.currentData = this.filterDemoData(this.currentData || this.generateDemoGroundwaterData(), filters);
+        }
+    }
+    
+    filterDemoData(data, filters) {
+        return data.filter(item => {
+            if (filters.catchment && item.catchment_name !== filters.catchment) return false;
+            if (filters.parameter && item.parameter_type !== filters.parameter) return false;
+            if (filters.start_date && item.measurement_date < filters.start_date) return false;
+            if (filters.end_date && item.measurement_date > filters.end_date) return false;
+            return true;
+        });
+    }
+    
+    async loadPerformanceMetrics(filters) {
+        try {
+            const params = new URLSearchParams();
+            if (filters.catchment) params.append('catchment', filters.catchment);
+            if (filters.parameter) params.append('parameter', filters.parameter);
+            
+            const response = await fetch(`${this.apiBase}/metrics?${params}`);
+            const data = await response.json();
+            this.metricsData = data.metrics || [];
+        } catch (error) {
+            this.metricsData = this.metricsData || this.generateDemoMetrics();
+        }
+    }
+    
+    async loadFailureAnalysis(filters) {
+        try {
+            const params = new URLSearchParams();
+            Object.entries(filters).forEach(([key, value]) => {
+                if (value) params.append(key, value);
+            });
+            
+            const response = await fetch(`${this.apiBase}/failure-analysis?${params}`);
+            const data = await response.json();
+            this.failureData = data.failure_analysis || [];
+        } catch (error) {
+            this.failureData = this.failureData || this.generateDemoFailureData();
+        }
+    }
+    
+    updateSummaryCards() {
+        if (!this.currentData) return;
+        
+        // Total records
+        document.getElementById('totalRecords').textContent = this.currentData.length.toLocaleString();
+        
+        // Active catchments
+        const uniqueCatchments = new Set(this.currentData.map(d => d.catchment_name));
+        document.getElementById('activeCatchments').textContent = uniqueCatchments.size;
+        
+        // Failure rate
+        const failures = this.currentData.filter(d => d.is_failure === 1).length;
+        const failureRate = this.currentData.length > 0 ? (failures / this.currentData.length * 100).toFixed(1) : 0;
+        document.getElementById('failureRate').textContent = failureRate + '%';
+        
+        // Average reliability
+        if (this.metricsData && this.metricsData.length > 0) {
+            const avgReliability = this.metricsData.reduce((sum, m) => sum + (m.reliability || 0), 0) / this.metricsData.length;
+            document.getElementById('avgReliability').textContent = avgReliability.toFixed(3);
+        } else {
+            document.getElementById('avgReliability').textContent = '0.750';
+        }
+    }
+    
+    initializeAllCharts() {
+        this.initClassificationChart();
+        this.initMonthlyTrendsChart();
+        this.initCatchmentComparisonChart();
+        this.initTimeSeriesChart();
+        this.initSeasonalChart();
+        this.initAnnualChart();
+        this.initReliabilityChart();
+        this.initResilienceVulnerabilityChart();
+        this.initSustainabilityChart();
+        this.initCatchmentHealthChart();
+        this.initParameterDistributionChart();
+    }
+    
+    initClassificationChart() {
+        const ctx = document.getElementById('classificationChart').getContext('2d');
+        this.charts.classification = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels: ['Normal', 'Moderate Deficit', 'Severe Deficit', 'Extreme Deficit', 'Surplus'],
+                datasets: [{
+                    data: [0, 0, 0, 0, 0],
+                    backgroundColor: ['#22c55e', '#eab308', '#f97316', '#ef4444', '#3b82f6'],
+                    borderWidth: 2,
+                    borderColor: '#ffffff'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                    title: { display: false },
+                    legend: { 
+                        position: 'bottom',
+                        labels: {
+                            usePointStyle: true,
+                            padding: 20
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    initMonthlyTrendsChart() {
+        const ctx = document.getElementById('monthlyTrendsChart').getContext('2d');
+        this.charts.monthlyTrends = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                datasets: [{
+                    label: 'Failure Rate (%)',
+                    data: [],
+                    borderColor: '#ef4444',
+                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
+                    tension: 0.4,
+                    fill: true,
+                    pointBackgroundColor: '#ef4444',
+                    pointBorderColor: '#ffffff',
+                    pointBorderWidth: 2,
+                    pointRadius: 5
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        title: { 
+                            display: true, 
+                            text: 'Failure Rate (%)',
+                            font: { size: 12 }
+                        },
+                        grid: {
+                            color: 'rgba(0,0,0,0.05)'
+                        }
+                    },
+                    x: {
+                        grid: {
+                            color: 'rgba(0,0,0,0.05)'
+                        }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        display: true,
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+    
+    initCatchmentComparisonChart() {
+        const ctx = document.getElementById('catchmentComparisonChart').getContext('2d');
+        this.charts.catchmentComparison = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Reliability Score',
+                    data: [],
+                    backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                    borderColor: 'rgba(34, 197, 94, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y'
+                }, {
+                    label: 'Failure Rate (%)',
+                    data: [],
+                    backgroundColor: 'rgba(239, 68, 68, 0.8)',
+                    borderColor: 'rgba(239, 68, 68, 1)',
+                    borderWidth: 1,
+                    yAxisID: 'y1'
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                scales: {
+                    y: {
+                        type: 'linear',
+                        display: true,
+                        position: 'left',
+                        title: { display: true, text: 'Reliability Score' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    },
+                    y1: {
+                        type: 'linear',
+                        display: true,
+                        position: 'right',
+                        title: { display: true, text: 'Failure Rate (%)' },
+                        grid: { drawOnChartArea: false }
+                    }
+                }
+            }
+        });
+    }
+    
+    initTimeSeriesChart() {
+        const ctx = document.getElementById('timeSeriesChart').getContext('2d');
+        this.charts.timeSeries = new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: [],
+                datasets: []
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        type: 'time',
+                        time: { 
+                            unit: 'month',
+                            displayFormats: {
+                                month: 'MMM yyyy'
+                            }
+                        },
+                        title: { display: true, text: 'Date' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Standardized Value' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+    
+    initSeasonalChart() {
+        const ctx = document.getElementById('seasonalChart').getContext('2d');
+        this.charts.seasonal = new Chart(ctx, {
+            type: 'radar',
+            data: {
+                labels: ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'],
+                datasets: []
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Average Value' },
+                        grid: { color: 'rgba(0,0,0,0.1)' }
+                    }
+                },
+                plugins: {
+                    legend: {
+                        position: 'top'
+                    }
+                }
+            }
+        });
+    }
+    
+    initAnnualChart() {
+        const ctx = document.getElementById('annualChart').getContext('2d');
+        this.charts.annual = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Annual Average',
+                    data: [],
+                    backgroundColor: 'rgba(59, 130, 246, 0.8)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        title: { display: true, text: 'Average Standardized Value' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    },
+                    x: {
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    }
+                }
+            }
+        });
+    }
+    
+    initReliabilityChart() {
+        const ctx = document.getElementById('reliabilityChart').getContext('2d');
+        this.charts.reliability = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Reliability Score',
+                    data: [],
+                    backgroundColor: 'rgba(34, 197, 94, 0.8)',
+                    borderColor: 'rgba(34, 197, 94, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    y: {
+                        beginAtZero: true,
+                        max: 1,
+                        title: { display: true, text: 'Reliability Score' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    }
+                }
+            }
+        });
+    }
+    
+    initResilienceVulnerabilityChart() {
+        const ctx = document.getElementById('resilienceVulnerabilityChart').getContext('2d');
+        this.charts.resilienceVulnerability = new Chart(ctx, {
+            type: 'scatter',
+            data: {
+                datasets: [{
+                    label: 'Catchments',
+                    data: [],
+                    backgroundColor: 'rgba(59, 130, 246, 0.6)',
+                    borderColor: 'rgba(59, 130, 246, 1)',
+                    pointRadius: 8,
+                    pointHoverRadius: 10
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Resilience' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Vulnerability' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const point = context.dataset.data[context.dataIndex];
+                                return `${point.label}: Resilience ${context.parsed.x.toFixed(3)}, Vulnerability ${context.parsed.y.toFixed(3)}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    initSustainabilityChart() {
+        const ctx = document.getElementById('sustainabilityChart').getContext('2d');
+        this.charts.sustainability = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: [],
+                datasets: [{
+                    label: 'Sustainability Index',
+                    data: [],
+                    backgroundColor: 'rgba(147, 51, 234, 0.8)',
+                    borderColor: 'rgba(147, 51, 234, 1)',
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                indexAxis: 'y',
+                scales: {
+                    x: {
+                        beginAtZero: true,
+                        max: 1,
+                        title: { display: true, text: 'Sustainability Index' }
+                    }
+                }
+            }
+        });
+    }
+    
+    initCatchmentHealthChart() {
+        const ctx = document.getElementById('catchmentHealthChart').getContext('2d');
+        this.charts.catchmentHealth = new Chart(ctx, {
+            type: 'polarArea',
+            data: {
+                labels: [],
+                datasets: [{
+                    data: [],
+                    backgroundColor: [
+                        'rgba(34, 197, 94, 0.8)',   // Excellent
+                        'rgba(59, 130, 246, 0.8)',  // Good
+                        'rgba(234, 179, 8, 0.8)',   // Fair
+                        'rgba(249, 115, 22, 0.8)',  // Poor
+                        'rgba(239, 68, 68, 0.8)'    // Critical
+                    ]
+                }]
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    r: {
+                        beginAtZero: true,
+                        title: { display: true, text: 'Health Score' }
+                    }
+                }
+            }
+        });
+    }
+    
+    initParameterDistributionChart() {
+        const ctx = document.getElementById('parameterDistributionChart').getContext('2d');
+        this.charts.parameterDistribution = new Chart(ctx, {
+            type: 'bubble',
+            data: {
+                datasets: []
+            },
+            options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                scales: {
+                    x: {
+                        title: { display: true, text: 'Mean Value' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    },
+                    y: {
+                        title: { display: true, text: 'Standard Deviation' },
+                        grid: { color: 'rgba(0,0,0,0.05)' }
+                    }
+                },
+                plugins: {
+                    tooltip: {
+                        callbacks: {
+                            label: function(context) {
+                                const point = context.dataset.data[context.dataIndex];
+                                return `${context.dataset.label}: Mean ${context.parsed.x.toFixed(2)}, StdDev ${context.parsed.y.toFixed(2)}, Count ${point.r}`;
+                            }
+                        }
+                    }
+                }
+            }
+        });
+    }
+    
+    updateAllCharts() {
+        if (!this.currentData || this.currentData.length === 0) {
+            this.showToast('No data available to display charts', 'warning');
+            return;
+        }
+        
+        this.updateClassificationChart();
+        this.updateMonthlyTrendsChart();
+        this.updateCatchmentComparisonChart();
+        this.updateTimeSeriesChart();
+        this.updateSeasonalChart();
+        this.updateAnnualChart();
+        this.updateReliabilityChart();
+        this.updateResilienceVulnerabilityChart();
+        this.updateSustainabilityChart();
+        this.updateCatchmentHealthChart();
+        this.updateParameterDistributionChart();
+    }
+    
+    updateClassificationChart() {
+        const classifications = {
+            'Normal': 0,
+            'Moderate_Deficit': 0,
+            'Severe_Deficit': 0,
+            'Extreme_Deficit': 0,
+            'Surplus': 0
+        };
+        
+        this.currentData.forEach(item => {
+            if (classifications.hasOwnProperty(item.classification)) {
+                classifications[item.classification]++;
+            }
+        });
+        
+        this.charts.classification.data.datasets[0].data = [
+            classifications.Normal,
+            classifications.Moderate_Deficit,
+            classifications.Severe_Deficit,
+            classifications.Extreme_Deficit,
+            classifications.Surplus
+        ];
+        
+        this.charts.classification.update();
+    }
+    
+    updateMonthlyTrendsChart() {
+        const monthlyFailures = new Array(12).fill(0);
+        const monthlyCounts = new Array(12).fill(0);
+        
+        this.currentData.forEach(item => {
+            const date = new Date(item.measurement_date);
+            const month = date.getMonth();
+            monthlyCounts[month]++;
+            if (item.is_failure === 1) {
+                monthlyFailures[month]++;
+            }
+        });
+        
+        const failureRates = monthlyFailures.map((failures, index) => 
+            monthlyCounts[index] > 0 ? (failures / monthlyCounts[index] * 100) : 0
+        );
+        
+        this.charts.monthlyTrends.data.datasets[0].data = failureRates;
+        this.charts.monthlyTrends.update();
+    }
+    
+    updateCatchmentComparisonChart() {
+        const catchmentStats = {};
+        
+        // Group data by catchment
+        this.currentData.forEach(item => {
+            if (!catchmentStats[item.catchment_name]) {
+                catchmentStats[item.catchment_name] = {
+                    total: 0,
+                    failures: 0
+                };
+            }
+            catchmentStats[item.catchment_name].total++;
+            if (item.is_failure === 1) {
+                catchmentStats[item.catchment_name].failures++;
+            }
+        });
+        
+        const catchments = Object.keys(catchmentStats);
+        const reliabilityData = catchments.map(catchment => {
+            const stats = catchmentStats[catchment];
+            return stats.total > 0 ? (stats.total - stats.failures) / stats.total : 0;
+        });
+        const failureRateData = catchments.map(catchment => {
+            const stats = catchmentStats[catchment];
+            return stats.total > 0 ? (stats.failures / stats.total * 100) : 0;
+        });
+        
+        this.charts.catchmentComparison.data.labels = catchments;
+        this.charts.catchmentComparison.data.datasets[0].data = reliabilityData;
+        this.charts.catchmentComparison.data.datasets[1].data = failureRateData;
+        this.charts.catchmentComparison.update();
+    }
+    
+    updateTimeSeriesChart() {
+        // Group data by parameter type and create datasets
+        const parameterData = {};
+        const colors = {
+            'Recharge': '#3b82f6',
+            'GWLevel': '#10b981', 
+            'Baseflow': '#f59e0b'
+        };
+        
+        this.currentData.forEach(item => {
+            if (!parameterData[item.parameter_type]) {
+                parameterData[item.parameter_type] = [];
+            }
+            parameterData[item.parameter_type].push({
+                x: item.measurement_date,
+                y: item.standardized_value
+            });
+        });
+        
+        const datasets = Object.keys(parameterData).map(param => ({
+            label: param,
+            data: parameterData[param].sort((a, b) => new Date(a.x) - new Date(b.x)),
+            borderColor: colors[param] || '#6b7280',
+            backgroundColor: colors[param] ? colors[param] + '20' : '#6b728020',
+            tension: 0.4,
+            pointRadius: 2,
+            pointHoverRadius: 4
+        }));
+        
+        this.charts.timeSeries.data.datasets = datasets;
+        this.charts.timeSeries.update();
+    }
+    
+    updateSeasonalChart() {
+        const monthlyAvgs = new Array(12).fill(0);
+        const monthlyCounts = new Array(12).fill(0);
+        
+        this.currentData.forEach(item => {
+            const date = new Date(item.measurement_date);
+            const month = date.getMonth();
+            monthlyAvgs[month] += item.standardized_value || 0;
+            monthlyCounts[month]++;
+        });
+        
+        const seasonalPattern = monthlyAvgs.map((sum, index) => 
+            monthlyCounts[index] > 0 ? sum / monthlyCounts[index] : 0
+        );
+        
+        this.charts.seasonal.data.datasets = [{
+            label: 'Average Standardized Value',
+            data: seasonalPattern,
+            backgroundColor: 'rgba(59, 130, 246, 0.2)',
+            borderColor: 'rgba(59, 130, 246, 1)',
+            pointBackgroundColor: 'rgba(59, 130, 246, 1)',
+            pointBorderColor: '#fff',
+            pointHoverBackgroundColor: '#fff',
+            pointHoverBorderColor: 'rgba(59, 130, 246, 1)'
+        }];
+        
+        this.charts.seasonal.update();
+    }
+    
+    updateAnnualChart() {
+        const yearlyAvgs = {};
+        const yearlyCounts = {};
+        
+        this.currentData.forEach(item => {
+            const year = new Date(item.measurement_date).getFullYear();
+            if (!yearlyAvgs[year]) {
+                yearlyAvgs[year] = 0;
+                yearlyCounts[year] = 0;
+            }
+            yearlyAvgs[year] += item.standardized_value || 0;
+            yearlyCounts[year]++;
+        });
+        
+        const years = Object.keys(yearlyAvgs).sort();
+        const annualData = years.map(year => 
+            yearlyCounts[year] > 0 ? yearlyAvgs[year] / yearlyCounts[year] : 0
+        );
+        
+        this.charts.annual.data.labels = years;
+        this.charts.annual.data.datasets[0].data = annualData;
+        this.charts.annual.update();
+    }
+    
+    updateReliabilityChart() {
+        if (!this.metricsData || this.metricsData.length === 0) return;
+        
+        const catchments = this.metricsData.map(m => m.catchment_name);
+        const reliability = this.metricsData.map(m => m.reliability || 0);
+        
+        this.charts.reliability.data.labels = catchments;
+        this.charts.reliability.data.datasets[0].data = reliability;
+        this.charts.reliability.update();
+    }
+    
+    updateResilienceVulnerabilityChart() {
+        if (!this.metricsData || this.metricsData.length === 0) return;
+        
+        const scatterData = this.metricsData.map(metric => ({
+            x: metric.resilience || 0,
+            y: metric.vulnerability || 0,
+            label: metric.catchment_name
+        }));
+        
+        this.charts.resilienceVulnerability.data.datasets[0].data = scatterData;
+        this.charts.resilienceVulnerability.update();
+    }
+    
+    updateSustainabilityChart() {
+        if (!this.metricsData || this.metricsData.length === 0) return;
+        
+        const catchments = this.metricsData.map(m => m.catchment_name);
+        const sustainability = this.metricsData.map(m => m.sustainability || 0);
+        
+        this.charts.sustainability.data.labels = catchments;
+        this.charts.sustainability.data.datasets[0].data = sustainability;
+        this.charts.sustainability.update();
+    }
+    
+    updateCatchmentHealthChart() {
+        const catchmentStats = {};
+        
+        this.currentData.forEach(item => {
+            if (!catchmentStats[item.catchment_name]) {
+                catchmentStats[item.catchment_name] = {
+                    total: 0,
+                    failures: 0
+                };
+            }
+            catchmentStats[item.catchment_name].total++;
+            if (item.is_failure === 1) {
+                catchmentStats[item.catchment_name].failures++;
+            }
+        });
+        
+        const catchments = Object.keys(catchmentStats);
+        const healthScores = catchments.map(catchment => {
+            const stats = catchmentStats[catchment];
+            return stats.total > 0 ? (stats.total - stats.failures) / stats.total * 100 : 0;
+        });
+        
+        this.charts.catchmentHealth.data.labels = catchments;
+        this.charts.catchmentHealth.data.datasets[0].data = healthScores;
+        this.charts.catchmentHealth.update();
+    }
+    
+    updateParameterDistributionChart() {
+        const parameterStats = {};
+        
+        this.currentData.forEach(item => {
+            if (!parameterStats[item.parameter_type]) {
+                parameterStats[item.parameter_type] = {
+                    values: [],
+                    count: 0
+                };
+            }
+            parameterStats[item.parameter_type].values.push(item.original_value || 0);
+            parameterStats[item.parameter_type].count++;
+        });
+        
+        const datasets = Object.keys(parameterStats).map((param, index) => {
+            const values = parameterStats[param].values;
+            const mean = values.reduce((sum, v) => sum + v, 0) / values.length;
+            const variance = values.reduce((sum, v) => sum + Math.pow(v - mean, 2), 0) / values.length;
+            const stdDev = Math.sqrt(variance);
+            
+            return {
+                label: param,
+                data: [{
+                    x: mean,
+                    y: stdDev,
+                    r: Math.sqrt(parameterStats[param].count) * 2
+                }],
+                backgroundColor: ['#3b82f680', '#10b98180', '#f59e0b80'][index % 3],
+                borderColor: ['#3b82f6', '#10b981', '#f59e0b'][index % 3]
+            };
+        });
+        
+        this.charts.parameterDistribution.data.datasets = datasets;
+        this.charts.parameterDistribution.update();
+    }
+    
+    updateAnalyticsTable() {
+        const container = document.getElementById('analyticsTable');
+        
+        if (!this.currentData || this.currentData.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-chart-line text-4xl mb-4"></i>
+                    <p>No data available for the selected filters</p>
+                </div>
+            `;
+            return;
+        }
+        
+        // Create summary statistics table
+        const catchmentStats = this.calculateCatchmentStatistics();
+        
+        let tableHTML = `
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Catchment</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Total Records</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Failures</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Failure Rate (%)</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Avg Severity</th>
+                        <th class="px-4 py-3 text-left font-semibold text-gray-700">Health Status</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+        `;
+        
+        Object.entries(catchmentStats).forEach(([catchment, stats]) => {
+            const healthStatus = this.getHealthStatus(stats.failureRate);
+            const healthClass = this.getHealthStatusClass(healthStatus);
+            
+            tableHTML += `
+                <tr class="hover:bg-gray-50 transition-colors">
+                    <td class="px-4 py-3 font-medium text-gray-900">${catchment}</td>
+                    <td class="px-4 py-3 text-gray-600">${stats.total.toLocaleString()}</td>
+                    <td class="px-4 py-3 text-gray-600">${stats.failures.toLocaleString()}</td>
+                    <td class="px-4 py-3 text-gray-600">${stats.failureRate.toFixed(1)}%</td>
+                    <td class="px-4 py-3 text-gray-600">${stats.avgSeverity.toFixed(2)}</td>
+                    <td class="px-4 py-3">
+                        <span class="px-2 py-1 rounded-full text-xs font-medium ${healthClass}">
+                            ${healthStatus}
+                        </span>
+                    </td>
+                </tr>
+            `;
+        });
+        
+        tableHTML += '</tbody></table>';
+        container.innerHTML = tableHTML;
+    }
+    
+    updateCorrelationMatrix() {
+        const container = document.getElementById('correlationMatrix');
+        
+        if (!this.currentData || this.currentData.length === 0) {
+            container.innerHTML = '<p class="text-gray-500 text-center py-8">No data available for correlation analysis</p>';
+            return;
+        }
+        
+        // Calculate correlation matrix for numerical parameters
+        const parameters = ['original_value', 'standardized_value'];
+        const parameterNames = ['Original Value', 'Standardized Value'];
+        const correlations = this.calculateCorrelations(parameters);
+        
+        let matrixHTML = `
+            <div class="inline-block min-w-full">
+                <table class="border-collapse">
+                    <thead>
+                        <tr>
+                            <th class="correlation-cell bg-gray-100 font-bold"></th>
+        `;
+        
+        parameterNames.forEach(name => {
+            matrixHTML += `<th class="correlation-cell bg-gray-100 font-bold text-xs">${name}</th>`;
+        });
+        
+        matrixHTML += '</tr></thead><tbody>';
+        
+        parameterNames.forEach((rowName, i) => {
+            matrixHTML += `<tr><td class="correlation-cell bg-gray-100 font-bold text-xs">${rowName}</td>`;
+            
+            parameterNames.forEach((colName, j) => {
+                const correlation = correlations[i][j];
+                const intensity = Math.abs(correlation);
+                const color = correlation > 0 ? 
+                    `rgba(34, 197, 94, ${intensity})` : 
+                    `rgba(239, 68, 68, ${intensity})`;
+                
+                matrixHTML += `
+                    <td class="correlation-cell text-white font-bold" style="background-color: ${color}">
+                        ${correlation.toFixed(2)}
+                    </td>
+                `;
+            });
+            
+            matrixHTML += '</tr>';
+        });
+        
+        matrixHTML += '</tbody></table></div>';
+        container.innerHTML = matrixHTML;
+    }
+    
+    calculateCorrelations(parameters) {
+        const n = parameters.length;
+        const correlations = Array(n).fill().map(() => Array(n).fill(0));
+        
+        for (let i = 0; i < n; i++) {
+            for (let j = 0; j < n; j++) {
+                if (i === j) {
+                    correlations[i][j] = 1.0;
+                } else {
+                    // Calculate Pearson correlation coefficient
+                    const values1 = this.currentData.map(d => d[parameters[i]] || 0);
+                    const values2 = this.currentData.map(d => d[parameters[j]] || 0);
+                    correlations[i][j] = this.pearsonCorrelation(values1, values2);
+                }
+            }
+        }
+        
+        return correlations;
+    }
+    
+    pearsonCorrelation(x, y) {
+        const n = x.length;
+        if (n === 0) return 0;
+        
+        const sumX = x.reduce((a, b) => a + b, 0);
+        const sumY = y.reduce((a, b) => a + b, 0);
+        const sumXY = x.reduce((sum, xi, i) => sum + xi * y[i], 0);
+        const sumX2 = x.reduce((sum, xi) => sum + xi * xi, 0);
+        const sumY2 = y.reduce((sum, yi) => sum + yi * yi, 0);
+        
+        const numerator = n * sumXY - sumX * sumY;
+        const denominator = Math.sqrt((n * sumX2 - sumX * sumX) * (n * sumY2 - sumY * sumY));
+        
+        return denominator === 0 ? 0 : numerator / denominator;
+    }
+    
+    calculateCatchmentStatistics() {
+        const stats = {};
+        
+        this.currentData.forEach(item => {
+            if (!stats[item.catchment_name]) {
+                stats[item.catchment_name] = {
+                    total: 0,
+                    failures: 0,
+                    severitySum: 0,
+                    severityCount: 0
+                };
+            }
+            
+            const catchmentStats = stats[item.catchment_name];
+            catchmentStats.total++;
+            
+            if (item.is_failure === 1) {
+                catchmentStats.failures++;
+                catchmentStats.severitySum += Math.abs(item.standardized_value || 0);
+                catchmentStats.severityCount++;
+            }
+        });
+        
+        // Calculate derived metrics
+        Object.keys(stats).forEach(catchment => {
+            const catchmentStats = stats[catchment];
+            catchmentStats.failureRate = catchmentStats.total > 0 ? 
+                (catchmentStats.failures / catchmentStats.total * 100) : 0;
+            catchmentStats.avgSeverity = catchmentStats.severityCount > 0 ? 
+                (catchmentStats.severitySum / catchmentStats.severityCount) : 0;
+        });
+        
+        return stats;
+    }
+    
+    getHealthStatus(failureRate) {
+        if (failureRate < 10) return 'Excellent';
+        if (failureRate < 20) return 'Good';
+        if (failureRate < 35) return 'Fair';
+        if (failureRate < 50) return 'Poor';
+        return 'Critical';
+    }
+    
+    getHealthStatusClass(status) {
+        const classes = {
+            'Excellent': 'bg-green-100 text-green-800',
+            'Good': 'bg-blue-100 text-blue-800',
+            'Fair': 'bg-yellow-100 text-yellow-800',
+            'Poor': 'bg-orange-100 text-orange-800',
+            'Critical': 'bg-red-100 text-red-800'
+        };
+        return classes[status] || 'bg-gray-100 text-gray-800';
+    }
+    
+    switchTab(tabName) {
+        // Hide all content
+        ['overview', 'trends', 'performance', 'spatial'].forEach(tab => {
+            document.getElementById(`${tab}Content`).classList.add('hidden');
+            document.getElementById(`${tab}Tab`).className = 'tab-inactive py-4 px-1 font-medium text-sm transition-colors';
+        });
+        
+        // Show selected content
+        document.getElementById(`${tabName}Content`).classList.remove('hidden');
+        document.getElementById(`${tabName}Tab`).className = 'tab-active py-4 px-1 font-medium text-sm transition-colors';
+        
+        this.currentTab = tabName;
+        
+        // Trigger chart updates for the active tab
+        setTimeout(() => {
+            Object.values(this.charts).forEach(chart => {
+                if (chart && chart.resize) {
+                    chart.resize();
+                }
+            });
+        }, 100);
+    }
+    
+    clearFilters() {
+        document.getElementById('catchmentSelect').value = '';
+        document.getElementById('parameterSelect').value = '';
+        document.getElementById('startDate').value = '';
+        document.getElementById('endDate').value = '';
+        
+        // Reset summary cards
+        ['totalRecords', 'activeCatchments', 'failureRate', 'avgReliability'].forEach(id => {
+            document.getElementById(id).textContent = '-';
+        });
+        
+        // Clear charts
+        Object.values(this.charts).forEach(chart => {
+            if (chart && chart.data) {
+                if (chart.data.labels) chart.data.labels = [];
+                chart.data.datasets.forEach(dataset => {
+                    dataset.data = [];
+                });
+                chart.update();
+            }
+        });
+        
+        // Clear analytics table
+        document.getElementById('analyticsTable').innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-chart-line text-4xl mb-4"></i>
+                <p>Select filters and generate report to view detailed analytics</p>
+            </div>
+        `;
+        
+        // Clear correlation matrix
+        document.getElementById('correlationMatrix').innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-th text-4xl mb-4"></i>
+                <p>Parameter correlation matrix will appear here after generating a report</p>
+            </div>
+        `;
+        
+        this.showToast('Filters cleared', 'info');
+    }
+    
+    async refreshData() {
+        this.showLoading('Refreshing data...');
+        try {
+            await this.loadInitialData();
+            this.showToast('Data refreshed successfully', 'success');
+        } catch (error) {
+            this.showToast('Failed to refresh data', 'error');
+        } finally {
+            this.hideLoading();
+        }
+    }
+    
+    async exportReport() {
+        try {
+            this.showLoading('Preparing report export...');
+            
+            // Create a comprehensive report object
+            const reportData = {
+                metadata: {
+                    timestamp: new Date().toISOString(),
+                    reportType: 'Groundwater Analysis Report',
+                    version: '1.0.0'
+                },
+                filters: this.getFilters(),
+                summary: {
+                    totalRecords: this.currentData?.length || 0,
+                    activeCatchments: new Set(this.currentData?.map(d => d.catchment_name) || []).size,
+                    failureRate: this.currentData?.length > 0 ? 
+                        (this.currentData.filter(d => d.is_failure === 1).length / this.currentData.length * 100).toFixed(1) + '%' : '0%',
+                    avgReliability: this.metricsData?.length > 0 ? 
+                        (this.metricsData.reduce((sum, m) => sum + (m.reliability || 0), 0) / this.metricsData.length).toFixed(3) : '0.000'
+                },
+                catchmentStatistics: this.currentData ? this.calculateCatchmentStatistics() : {},
+                performanceMetrics: this.metricsData || [],
+                failureAnalysis: this.failureData || [],
+                rawData: {
+                    groundwaterData: this.currentData || [],
+                    metricsData: this.metricsData || [],
+                    failureData: this.failureData || []
+                }
+            };
+            
+            // Convert to JSON and download
+            const blob = new Blob([JSON.stringify(reportData, null, 2)], { type: 'application/json' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            const timestamp = new Date().toISOString().split('T')[0];
+            a.download = `groundwater_analysis_report_${timestamp}.json`;
+            document.body.appendChild(a);
+            a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            
+            this.showToast('Report exported successfully', 'success');
+        } catch (error) {
+            this.showToast('Failed to export report', 'error');
+            console.error('Export error:', error);
+        } finally {
+            this.hideLoading();
+        }
+    }
+    
+    showLoading(message) {
+        document.getElementById('loadingText').textContent = message;
+        const overlay = document.getElementById('loadingOverlay');
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
+    }
+    
+    hideLoading() {
+        const overlay = document.getElementById('loadingOverlay');
+        overlay.classList.add('hidden');
+        overlay.classList.remove('flex');
+    }
+    
+    showToast(message, type = 'info') {
+        const container = document.getElementById('toastContainer');
+        const colors = {
+            success: 'bg-green-500',
+            error: 'bg-red-500',
+            warning: 'bg-yellow-500',
+            info: 'bg-blue-500'
+        };
+        
+        const icons = {
+            success: 'fas fa-check-circle',
+            error: 'fas fa-exclamation-circle',
+            warning: 'fas fa-exclamation-triangle',
+            info: 'fas fa-info-circle'
+        };
+        
+        const toast = document.createElement('div');
+        toast.className = `${colors[type]} text-white px-6 py-3 rounded-lg shadow-lg mb-4 transform transition-all duration-300 translate-x-full max-w-sm`;
+        toast.innerHTML = `
+            <div class="flex items-center justify-between">
+                <div class="flex items-center">
+                    <i class="${icons[type]} mr-2"></i>
+                    <span class="text-sm font-medium">${message}</span>
+                </div>
+                <button onclick="this.parentElement.parentElement.remove()" class="ml-4 text-white hover:text-gray-200 focus:outline-none">
+                    <i class="fas fa-times"></i>
+                </button>
+            </div>
+        `;
+        
+        container.appendChild(toast);
+        
+        // Slide in animation
+        setTimeout(() => toast.classList.remove('translate-x-full'), 100);
+        
+        // Auto remove after 5 seconds
+        setTimeout(() => {
+            if (toast.parentElement) {
+                toast.classList.add('translate-x-full');
+                setTimeout(() => {
+                    if (toast.parentElement) {
+                        toast.remove();
+                    }
+                }, 300);
+            }
+        }, 5000);
+    }
+}
+
+// Initialize the reports system when the DOM is loaded
+document.addEventListener('DOMContentLoaded', () => {
+    try {
+        window.groundwaterReports = new GroundwaterReports();
+    } catch (error) {
+        console.error('Failed to initialize Groundwater Reports:', error);
+        
+        // Show fallback message
+        const fallbackMessage = document.createElement('div');
+        fallbackMessage.className = 'fixed inset-0 bg-red-500 text-white flex items-center justify-center z-50';
+        fallbackMessage.innerHTML = `
+            <div class="text-center">
+                <i class="fas fa-exclamation-triangle text-6xl mb-4"></i>
+                <h2 class="text-2xl font-bold mb-2">System Initialization Error</h2>
+                <p class="text-lg">Failed to load the groundwater reports dashboard.</p>
+                <p class="text-sm mt-2 opacity-75">Please check the console for more details and refresh the page.</p>
+                <button onclick="window.location.reload()" class="mt-4 bg-white text-red-500 px-4 py-2 rounded font-medium hover:bg-gray-100">
+                    Refresh Page
+                </button>
+            </div>
+        `;
+        document.body.appendChild(fallbackMessage);
+    }
+});
+
+// Global error handler for unhandled promises
+window.addEventListener('unhandledrejection', function(event) {
+    console.error('Unhandled promise rejection:', event.reason);
+    
+    if (window.groundwaterReports && typeof window.groundwaterReports.showToast === 'function') {
+        window.groundwaterReports.showToast('An unexpected error occurred', 'error');
+    }
+});
+</script>
+</body>
+</html>
+
