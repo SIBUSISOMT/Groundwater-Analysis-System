@@ -11,7 +11,7 @@ numpy>=1.24.3
 openpyxl>=3.1.2
 xlrd>=2.0.1
 
-# Scientific computing for advanced calculations
+# Scientific computing
 scipy>=1.11.2
 
 # Utilities
@@ -21,3 +21,8 @@ python-dotenv>=1.0.0
 # Development and testing
 pytest>=7.4.2
 pytest-cov>=4.1.0
+
+# Optional typing support (backward compat if needed)
+typing-extensions>=4.7.1
+openai>=1.0.0
+
