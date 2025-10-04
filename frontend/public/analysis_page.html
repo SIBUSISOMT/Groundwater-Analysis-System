@@ -1,0 +1,460 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Failure Analysis Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        @keyframes slideDown {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+        
+        @keyframes fadeIn {
+            from { opacity: 0; }
+            to { opacity: 1; }
+        }
+        
+        .animate-slide-down {
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        .animate-fade-in {
+            animation: fadeIn 0.5s ease-out;
+        }
+        
+        .gradient-bg {
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        }
+        
+        .gradient-danger {
+            background: linear-gradient(135deg, #f093fb 0%, #f5576c 100%);
+        }
+        
+        .gradient-warning {
+            background: linear-gradient(135deg, #ffecd2 0%, #fcb69f 100%);
+        }
+        
+        .gradient-success {
+            background: linear-gradient(135deg, #a8edea 0%, #fed6e3 100%);
+        }
+        
+        .stat-card {
+            background: white;
+            border-radius: 16px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.07);
+            transition: all 0.3s ease;
+        }
+        
+        .stat-card:hover {
+            transform: translateY(-4px);
+            box-shadow: 0 12px 24px rgba(0, 0, 0, 0.15);
+        }
+        
+        .severity-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: 4px 12px;
+            border-radius: 12px;
+            font-size: 11px;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+        
+        .chart-container {
+            position: relative;
+            height: 300px;
+            margin: 20px 0;
+        }
+        
+        .loading-spinner {
+            border: 3px solid #f3f4f6;
+            border-top: 3px solid #667eea;
+            border-radius: 50%;
+            width: 50px;
+            height: 50px;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+        
+        .filter-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: 6px 12px;
+            background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+            color: white;
+            border-radius: 20px;
+            font-size: 13px;
+            margin: 4px;
+            animation: slideDown 0.3s ease-out;
+        }
+        
+        .table-header {
+            background: linear-gradient(to right, #f8f9fa, #e9ecef);
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+        
+        @media print {
+            .no-print { display: none !important; }
+            body { background: white; }
+        }
+    </style>
+</head>
+<body class="bg-gray-50">
+    <!-- Header -->
+    <header class="gradient-bg text-white shadow-lg no-print">
+        <div class="container mx-auto px-6 py-6">
+            <div class="flex items-center justify-between">
+                <div>
+                    <h1 class="text-3xl font-bold flex items-center">
+                        <i class="fas fa-chart-line mr-3"></i>
+                        Failure Analysis Dashboard
+                    </h1>
+                    <p class="text-blue-100 mt-2">Comprehensive groundwater system failure monitoring & analysis</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="window.location.href='index.html'" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
+                        <i class="fas fa-home mr-2"></i>Dashboard
+                    </button>
+                    <button onclick="window.location.href='reports.html'" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
+                        <i class="fas fa-file-alt mr-2"></i>Reports
+                    </button>
+                    <button id="refreshBtn" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
+                        <i class="fas fa-sync-alt mr-2"></i>Refresh
+                    </button>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <div class="container mx-auto px-6 py-8">
+        <!-- Quick Actions Bar -->
+        <div class="bg-white rounded-lg shadow-sm border p-4 mb-6 no-print animate-slide-down">
+            <div class="flex items-center justify-between flex-wrap gap-3">
+                <div class="flex items-center gap-3">
+                    <button id="viewAllBtn" class="bg-gradient-to-r from-blue-600 to-blue-700 text-white px-5 py-2 rounded-lg hover:from-blue-700 hover:to-blue-800 transition-all shadow-md">
+                        <i class="fas fa-database mr-2"></i>Load All Failures
+                    </button>
+                    <button id="toggleFiltersBtn" class="bg-gray-600 text-white px-5 py-2 rounded-lg hover:bg-gray-700 transition-all">
+                        <i class="fas fa-filter mr-2"></i>Advanced Filters
+                    </button>
+                    <button id="clearFiltersBtn" class="bg-red-600 text-white px-5 py-2 rounded-lg hover:bg-red-700 transition-all">
+                        <i class="fas fa-times mr-2"></i>Clear All
+                    </button>
+                </div>
+                <div class="flex items-center gap-2">
+                    <button id="exportExcelBtn" class="bg-green-600 text-white px-4 py-2 rounded-lg hover:bg-green-700 transition-all">
+                        <i class="fas fa-file-excel mr-2"></i>Export Excel
+                    </button>
+                    <button id="exportPdfBtn" class="bg-red-600 text-white px-4 py-2 rounded-lg hover:bg-red-700 transition-all">
+                        <i class="fas fa-file-pdf mr-2"></i>Export PDF
+                    </button>
+                    <button id="printBtn" class="bg-purple-600 text-white px-4 py-2 rounded-lg hover:bg-purple-700 transition-all">
+                        <i class="fas fa-print mr-2"></i>Print
+                    </button>
+                </div>
+            </div>
+        </div>
+
+         <!-- Summary Statistics Cards -->
+      <!-- Summary Statistics Cards -->
+<div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8 animate-fade-in">
+    <div class="stat-card p-6">
+        <div class="flex items-center justify-between mb-3">
+            <div class="bg-blue-100 p-3 rounded-full">
+                <i class="fas fa-database text-blue-600 text-xl"></i>
+            </div>
+            <span class="text-xs text-gray-500">Total Periods</span>
+        </div>
+        <div class="text-3xl font-bold text-gray-900" id="totalPeriods">0</div>
+        <div class="text-xs text-gray-600 mt-2">Analysis time periods</div>
+    </div>
+
+    <div class="stat-card p-6">
+        <div class="flex items-center justify-between mb-3">
+            <div class="bg-blue-100 p-3 rounded-full">
+                <i class="fas fa-water text-blue-600 text-xl"></i>
+            </div>
+            <span class="text-xs text-gray-500">Baseflow Records</span>
+        </div>
+        <div class="text-3xl font-bold text-blue-600" id="totalBaseflow">0</div>
+        <div class="text-xs text-gray-600 mt-2">Total baseflow data points</div>
+    </div>
+
+    <div class="stat-card p-6">
+        <div class="flex items-center justify-between mb-3">
+            <div class="bg-green-100 p-3 rounded-full">
+                <i class="fas fa-tint text-green-600 text-xl"></i>
+            </div>
+            <span class="text-xs text-gray-500">Recharge Records</span>
+        </div>
+        <div class="text-3xl font-bold text-green-600" id="totalRecharge">0</div>
+        <div class="text-xs text-gray-600 mt-2">Total recharge data points</div>
+    </div>
+
+    <div class="stat-card p-6">
+        <div class="flex items-center justify-between mb-3">
+            <div class="bg-purple-100 p-3 rounded-full">
+                <i class="fas fa-chart-area text-purple-600 text-xl"></i>
+            </div>
+            <span class="text-xs text-gray-500">GW Level Records</span>
+        </div>
+        <div class="text-3xl font-bold text-purple-600" id="totalGWLevel">0</div>
+        <div class="text-xs text-gray-600 mt-2">Total groundwater level points</div>
+    </div>
+</div>
+<!-- Summary Statistics Details -->
+<div class="bg-white rounded-lg shadow-sm border p-6 mb-6 animate-fade-in">
+    <h3 class="text-lg font-semibold mb-4">Summary Statistics</h3>
+    
+    <div class="grid grid-cols-1 md:grid-cols-4 gap-6 mb-6">
+        <div>
+            <div class="text-sm text-gray-600 mb-1">Total Records:</div>
+            <div class="text-2xl font-bold" id="summaryTotalRecords">0</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600 mb-1">Total Failures:</div>
+            <div class="text-2xl font-bold text-red-600" id="summaryTotalFailures">0</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600 mb-1">Overall Failure Rate:</div>
+            <div class="text-2xl font-bold text-orange-600" id="summaryOverallRate">0%</div>
+        </div>
+        <div>
+            <div class="text-sm text-gray-600 mb-1">Periods Analyzed:</div>
+            <div class="text-2xl font-bold" id="summaryPeriods">0</div>
+        </div>
+    </div>
+    
+    <div class="border-t pt-4">
+        <h4 class="text-sm font-semibold text-gray-700 mb-3">By Category:</h4>
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+            <div class="border rounded-lg p-4">
+                <div class="text-sm font-medium text-gray-700 mb-2">BASEFLOW</div>
+                <div class="text-2xl font-bold text-red-600" id="baseflowRate">0%</div>
+                <div class="text-xs text-gray-600 mt-1" id="baseflowRecords">0/0 records</div>
+            </div>
+            <div class="border rounded-lg p-4">
+                <div class="text-sm font-medium text-gray-700 mb-2">GWLEVEL</div>
+                <div class="text-2xl font-bold text-green-600" id="gwlevelRate">0%</div>
+                <div class="text-xs text-gray-600 mt-1" id="gwlevelRecords">0/0 records</div>
+            </div>
+            <div class="border rounded-lg p-4">
+                <div class="text-sm font-medium text-gray-700 mb-2">RECHARGE</div>
+                <div class="text-2xl font-bold text-red-600" id="rechargeRate">0%</div>
+                <div class="text-xs text-gray-600 mt-1" id="rechargeRecords">0/0 records</div>
+            </div>
+        </div>
+    </div>
+</div>
+
+ <!-- Data Upload Section -->
+<div class="bg-white rounded-lg shadow-sm border p-6 mb-6 no-print animate-slide-down">
+    <div class="flex items-center justify-between mb-4">
+        <h3 class="text-lg font-semibold flex items-center">
+            <i class="fas fa-upload text-blue-600 mr-2"></i>
+            Upload Data Source
+        </h3>
+        <button id="toggleUploadBtn" class="text-sm text-blue-600 hover:text-blue-800">
+            <i class="fas fa-chevron-down mr-1"></i>Show Upload Form
+        </button>
+    </div>
+    
+    <div id="uploadFormSection" class="hidden">
+        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                <select id="categorySelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="">Select Category</option>
+                    <option value="BASEFLOW">Baseflow</option>
+                    <option value="RECHARGE">Recharge</option>
+                    <option value="GWLEVEL">Groundwater Level</option>
+                </select>
+            </div>
+            <div>
+                <label class="block text-sm font-medium text-gray-700 mb-2">Subcatchment</label>
+                <select id="subcatchmentSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+                    <option value="">Select Subcatchment</option>
+                    <option value="Upper Vaal">Upper Vaal</option>
+                    <option value="Middle Vaal">Middle Vaal</option>
+                    <option value="Lower Vaal">Lower Vaal</option>
+                </select>
+            </div>
+            <div class="flex items-end">
+                <div id="dropZone" class="w-full px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all">
+                    <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
+                    <p class="text-sm text-gray-600">Click or drag Excel file here</p>
+                    <p class="text-xs text-gray-500 mt-1">Supported: .xlsx, .xls</p>
+                    <input type="file" id="fileInput" accept=".xlsx,.xls" class="hidden">
+                </div>
+            </div>
+        </div>
+    </div>
+    
+    <!-- Data Sources Table - Always Visible -->
+    <div class="mt-6">
+        <h4 class="text-md font-semibold mb-3 flex items-center">
+            <i class="fas fa-database text-gray-600 mr-2"></i>
+            Uploaded Data Sources
+        </h4>
+        <div id="dataSourcesTable" class="overflow-x-auto bg-gray-50 rounded-lg p-4">
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-database text-4xl mb-4"></i>
+                <p>Loading data sources...</p>
+            </div>
+        </div>
+    </div>
+</div>
+
+        <!-- Advanced Filters Panel -->
+        <div id="filtersPanel" class="bg-white rounded-lg shadow-sm border p-6 mb-6 hidden no-print animate-slide-down">
+            <h3 class="text-lg font-semibold mb-4 flex items-center">
+                <i class="fas fa-sliders-h text-blue-600 mr-2"></i>
+                Advanced Filtering Options
+            </h3>
+            
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-4 mb-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Catchment</label>
+                    <select id="catchmentFilter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">All Catchments</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
+                    <select id="categoryFilter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">All Categories</option>
+                        <option value="recharge">Recharge</option>
+                        <option value="gwlevel">Groundwater Level</option>
+                        <option value="baseflow">Baseflow</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Start Date</label>
+                    <input type="date" id="startDateFilter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">End Date</label>
+                    <input type="date" id="endDateFilter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-2">Severity</label>
+                    <select id="severityFilter" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent">
+                        <option value="">All Levels</option>
+                        <option value="Critical">Critical (>50%)</option>
+                        <option value="High">High (30-50%)</option>
+                        <option value="Moderate">Moderate (15-30%)</option>
+                        <option value="Low">Low (0-15%)</option>
+                    </select>
+                </div>
+            </div>
+            
+            <div class="flex items-center justify-between">
+                <button id="applyFiltersBtn" class="bg-blue-600 text-white px-6 py-2 rounded-lg hover:bg-blue-700 transition-all">
+                    <i class="fas fa-check mr-2"></i>Apply Filters
+                </button>
+                <div id="activeFiltersContainer" class="flex flex-wrap items-center gap-2"></div>
+            </div>
+        </div>
+
+       
+        <!-- Charts Section -->
+        <!-- <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
+            <div class="bg-white rounded-lg shadow-sm border p-6">
+                <h4 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fas fa-chart-bar text-blue-600 mr-2"></i>
+                    Failure Rate by Category
+                </h4>
+                <div class="chart-container">
+                    <canvas id="categoryChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm border p-6">
+                <h4 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fas fa-chart-line text-green-600 mr-2"></i>
+                    Temporal Failure Trends
+                </h4>
+                <div class="chart-container">
+                    <canvas id="temporalChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm border p-6">
+                <h4 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fas fa-map-marker-alt text-purple-600 mr-2"></i>
+                    Catchment Comparison
+                </h4>
+                <div class="chart-container">
+                    <canvas id="catchmentChart"></canvas>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-lg shadow-sm border p-6">
+                <h4 class="text-lg font-semibold mb-4 flex items-center">
+                    <i class="fas fa-exclamation-circle text-red-600 mr-2"></i>
+                    Severity Distribution
+                </h4>
+                <div class="chart-container">
+                    <canvas id="severityChart"></canvas>
+                </div>
+            </div>
+        </div> -->
+
+        <!-- Detailed Failure Analysis Table -->
+    <!-- Detailed Failure Analysis Table -->
+<div class="bg-white rounded-lg shadow-sm border p-6 animate-fade-in">
+    <div class="flex items-center justify-between mb-4">
+        <h4 class="text-lg font-semibold flex items-center">
+            <i class="fas fa-table text-gray-600 mr-2"></i>
+            Detailed Failure Analysis Records
+        </h4>
+        <div class="flex items-center gap-3 no-print">
+            <input type="text" id="searchInput" placeholder="Search records..." 
+                   class="px-4 py-2 border border-gray-300 rounded-lg text-sm focus:ring-2 focus:ring-blue-500">
+            <select id="rowsPerPage" class="px-3 py-2 border border-gray-300 rounded-lg text-sm">
+                <option value="15">15 rows</option>
+                <option value="25">25 rows</option>
+                <option value="50">50 rows</option>
+                <option value="100">100 rows</option>
+            </select>
+        </div>
+    </div>
+
+    <div id="tableContainer" class="overflow-x-auto">
+        <div class="flex items-center justify-center py-12">
+            <div class="loading-spinner"></div>
+        </div>
+    </div>
+
+    <div id="paginationContainer" class="mt-4 no-print"></div>
+</div>
+
+    <!-- Loading Overlay -->
+    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 z-50 hidden items-center justify-center">
+        <div class="bg-white p-8 rounded-lg shadow-xl">
+            <div class="flex items-center">
+                <div class="loading-spinner mr-4"></div>
+                <div>
+                    <div class="font-semibold text-lg">Processing</div>
+                    <div id="loadingText" class="text-sm text-gray-600">Please wait...</div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Toast Container -->
+    <div id="toastContainer" class="fixed top-4 right-4 z-40 space-y-2"></div>
+
+    <script src="/frontend/src/failure-analysis.js"></script>
+</body>
+</html>

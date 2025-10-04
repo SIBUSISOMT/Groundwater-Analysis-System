@@ -2,7 +2,7 @@ import os
 import sys
 import logging
 from app import app, db
-from config import Config  # Import Config class directly
+from config import Config 
 
 def setup_logging():
     """Setup application logging"""
@@ -19,7 +19,7 @@ def validate_environment():
     """Validate environment before starting"""
     print("Validating environment...")
         
-    # Check configuration
+
     config_errors = Config.validate()
     if config_errors:
         print("Configuration errors:")
@@ -27,7 +27,7 @@ def validate_environment():
             print(f"  - {error}")
         return False
         
-    # Test database connection
+  
     try:
         db.execute_query("SELECT 1")
         print("✓ Database connection successful")

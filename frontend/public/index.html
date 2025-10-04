@@ -170,6 +170,195 @@
             0%, 80%, 100% { transform: scale(0.8); opacity: 0.5; }
             40% { transform: scale(1); opacity: 1; }
         }
+
+        /* ENHANCED SIDEBAR STYLES */
+        .enhanced-sidebar {
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+            box-shadow: 4px 0 24px rgba(0, 0, 0, 0.12);
+        }
+
+        .sidebar-header {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .sidebar-header::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            right: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: rotate 20s linear infinite;
+        }
+
+        @keyframes rotate {
+            0% { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        .logo-container {
+            position: relative;
+            z-index: 1;
+        }
+
+        .logo-icon {
+            background: rgba(255, 255, 255, 0.2);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0, 0, 0, 0.1);
+            transition: all 0.3s ease;
+        }
+
+        .logo-icon:hover {
+            transform: scale(1.05) rotate(5deg);
+            background: rgba(255, 255, 255, 0.3);
+        }
+
+        .nav-item {
+            position: relative;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+            overflow: hidden;
+        }
+
+        .nav-item::before {
+            content: '';
+            position: absolute;
+            left: 0;
+            top: 0;
+            height: 100%;
+            width: 4px;
+            background: linear-gradient(180deg, #3b82f6, #8b5cf6);
+            transform: scaleY(0);
+            transition: transform 0.3s ease;
+        }
+
+        .nav-item:hover::before,
+        .nav-item.active::before {
+            transform: scaleY(1);
+        }
+
+        .nav-item.active {
+            background: linear-gradient(90deg, rgba(59, 130, 246, 0.15) 0%, rgba(59, 130, 246, 0.05) 100%);
+            border-left: 4px solid transparent;
+        }
+
+        .nav-item:hover {
+            background: rgba(59, 130, 246, 0.08);
+            transform: translateX(4px);
+        }
+
+        .nav-icon {
+            transition: all 0.3s ease;
+            filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0));
+        }
+
+        .nav-item:hover .nav-icon,
+        .nav-item.active .nav-icon {
+            filter: drop-shadow(0 0 8px rgba(59, 130, 246, 0.6));
+            transform: scale(1.1);
+        }
+
+        /* ENHANCED HEADER STYLES */
+        .enhanced-header {
+            background: linear-gradient(135deg, #ffffff 0%, #f8fafc 100%);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 24px rgba(0, 0, 0, 0.06);
+        }
+
+        .status-badge {
+            position: relative;
+            padding: 8px 16px;
+            background: linear-gradient(135deg, #f0f9ff 0%, #e0f2fe 100%);
+            border-radius: 20px;
+            border: 1px solid #bae6fd;
+            transition: all 0.3s ease;
+        }
+
+        .status-badge:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.2);
+        }
+
+        .status-dot {
+            box-shadow: 0 0 12px currentColor;
+            animation: pulse-dot 2s ease-in-out infinite;
+        }
+
+        @keyframes pulse-dot {
+            0%, 100% {
+                opacity: 1;
+                transform: scale(1);
+            }
+            50% {
+                opacity: 0.8;
+                transform: scale(1.2);
+            }
+        }
+
+        .header-button {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+
+        .header-button::before {
+            content: '';
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            width: 0;
+            height: 0;
+            border-radius: 50%;
+            background: rgba(255, 255, 255, 0.3);
+            transform: translate(-50%, -50%);
+            transition: width 0.4s, height 0.4s;
+        }
+
+        .header-button:hover::before {
+            width: 300px;
+            height: 300px;
+        }
+
+        .header-button:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 6px 20px rgba(59, 130, 246, 0.3);
+        }
+
+        .refresh-icon {
+            transition: transform 0.6s ease;
+        }
+
+        .header-button:hover .refresh-icon {
+            transform: rotate(360deg);
+        }
+
+        .gradient-text {
+            background: linear-gradient(135deg, #1e293b 0%, #3b82f6 100%);
+            -webkit-background-clip: text;
+            -webkit-text-fill-color: transparent;
+            background-clip: text;
+        }
+
+        /* Sidebar divider */
+        .nav-divider {
+            height: 1px;
+            background: linear-gradient(90deg, transparent 0%, rgba(255,255,255,0.1) 50%, transparent 100%);
+            margin: 16px 0;
+        }
+
+        /* Nav section labels */
+        .nav-section-label {
+            color: rgba(255, 255, 255, 0.4);
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.1em;
+            padding: 0 16px;
+            margin-top: 24px;
+            margin-bottom: 8px;
+        }
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
@@ -250,28 +439,74 @@
         <i class="fas fa-robot text-xl"></i>
     </div>
 
-    <!-- Sidebar -->
-    <div class="fixed left-0 top-0 h-full w-64 bg-white shadow-lg z-30 border-r border-gray-200">
-        <div class="flex items-center px-6 py-4 border-b border-gray-200 bg-white">
-            <div class="w-8 h-8 bg-blue-600 rounded-lg flex items-center justify-center mr-3">
-                <i class="fas fa-tint text-white text-sm"></i>
+    <!-- ENHANCED SIDEBAR -->
+    <div class="enhanced-sidebar fixed left-0 top-0 h-full w-64 z-30">
+        <!-- Animated Header -->
+        <div class="sidebar-header flex items-center px-6 py-5 border-b border-white border-opacity-10">
+            <div class="logo-container flex items-center">
+                <div class="logo-icon w-10 h-10 rounded-xl flex items-center justify-center mr-3">
+                    <i class="fas fa-tint text-white text-lg"></i>
+                </div>
+                <div>
+                    <h1 class="text-base font-bold text-white leading-tight">Groundwater</h1>
+                    <p class="text-xs text-blue-200 opacity-90">AI Analysis</p>
+                </div>
             </div>
-            <h1 class="text-lg font-semibold text-gray-800">AI Groundwater Analysis</h1>
         </div>
         
-        <nav class="mt-6 overflow-y-auto h-full pb-20">
-            <div class="px-3 space-y-1">
-                <a href="#dashboard" class="bg-blue-600 text-white flex items-center px-3 py-3 text-sm font-medium rounded-lg">
-                    <i class="fas fa-th-large mr-3 w-5 text-center"></i>
-                    Dashboard
+        <!-- Navigation -->
+        <nav class="mt-6 overflow-y-auto h-full pb-20 px-3">
+            <div class="space-y-1">
+                <a href="#dashboard" class="nav-item active flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-white">
+                    <i class="nav-icon fas fa-th-large mr-3 w-5 text-center"></i>
+                    <span>Dashboard</span>
                 </a>
-                <a href="#ai-insights" class="text-gray-600 hover:bg-gray-100 hover:text-gray-900 flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors">
-                    <i class="fas fa-brain mr-3 w-5 text-center text-gray-500"></i>
-                    AI Insights
+                
+                <a href="/frontend/public/Reports.html" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-brain mr-3 w-5 text-center"></i>
+                    <span>Reports</span>
                 </a>
-                <a href="#methodology" class="text-gray-600 hover:bg-gray-100 hover:text-gray-900 flex items-center px-3 py-3 text-sm font-medium rounded-lg transition-colors">
-                    <i class="fas fa-book mr-3 w-5 text-center text-gray-500"></i>
-                    Methodology
+                
+                <a href="#methodology" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-book mr-3 w-5 text-center"></i>
+                    <span>Methodology</span>
+                </a>
+            </div>
+
+            <div class="nav-divider"></div>
+
+            <div class="nav-section-label">Analysis Tools</div>
+            
+            <div class="space-y-1">
+                <a href="#data-upload" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-cloud-upload-alt mr-3 w-5 text-center"></i>
+                    <span>Data Upload</span>
+                </a>
+                
+                <a href="#visualization" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-chart-line mr-3 w-5 text-center"></i>
+                    <span>Visualization</span>
+                </a>
+                
+                <a href="#reports" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-file-alt mr-3 w-5 text-center"></i>
+                    <span>Reports</span>
+                </a>
+            </div>
+
+            <div class="nav-divider"></div>
+
+            <div class="nav-section-label">System</div>
+            
+            <div class="space-y-1">
+                <a href="#settings" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-cog mr-3 w-5 text-center"></i>
+                    <span>Settings</span>
+                </a>
+                
+                <a href="#help" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-question-circle mr-3 w-5 text-center"></i>
+                    <span>Help & Support</span>
                 </a>
             </div>
         </nav>
@@ -279,23 +514,37 @@
     
     <!-- Main Content -->
     <div class="ml-64 min-h-screen">
-        <!-- Header -->
-        <header class="bg-white shadow-sm border-b border-gray-200 sticky top-0 z-20">
+        <!-- ENHANCED HEADER -->
+        <header class="enhanced-header sticky top-0 z-20">
             <div class="px-6 py-4">
                 <div class="flex items-center justify-between">
-                    <h1 class="text-2xl font-bold text-gray-800">AI-Enhanced Groundwater Dashboard</h1>
-                    <div class="flex items-center space-x-4">
-                        <div id="connectionStatus" class="flex items-center">
-                            <div id="statusIndicator" class="w-3 h-3 bg-gray-400 rounded-full mr-2"></div>
-                            <span id="statusText" class="text-sm text-gray-600">Connecting...</span>
+                    <div>
+                        <h1 class="text-2xl font-bold gradient-text">AI-Enhanced Dashboard</h1>
+                        <p class="text-sm text-gray-500 mt-1">Real-time groundwater monitoring & analysis</p>
+                    </div>
+                    
+                    <div class="flex items-center space-x-3">
+                        <!-- Status Badge -->
+                        <div id="connectionStatus" class="status-badge flex items-center">
+                            <div id="statusIndicator" class="status-dot w-2.5 h-2.5 bg-gray-400 rounded-full mr-2"></div>
+                            <span id="statusText" class="text-xs font-medium text-gray-700">Connecting...</span>
                         </div>
-                        <button id="aiInsightsBtn" class="flex items-center px-3 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 transition-colors">
+                        
+                        <!-- AI Insights Button -->
+                        <button id="aiInsightsBtn" class="header-button flex items-center px-4 py-2.5 bg-gradient-to-r from-blue-600 to-blue-700 text-white rounded-xl font-medium text-sm shadow-lg">
                             <i class="fas fa-brain mr-2"></i>
-                            AI Insights
+                            <span>AI Insights</span>
                         </button>
-                        <button id="refreshBtn" class="p-2 text-gray-600 hover:text-gray-800 rounded-lg hover:bg-gray-100 transition-colors" title="Refresh Data">
-                            <i class="fas fa-sync-alt"></i>
+                        
+                        <!-- Refresh Button -->
+                        <button id="refreshBtn" class="header-button p-2.5 text-gray-600 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all" title="Refresh Data">
+                            <i class="fas fa-sync-alt refresh-icon"></i>
                         </button>
+                        
+                        <!-- User Profile -->
+                        <div class="header-button w-10 h-10 bg-gradient-to-br from-blue-500 to-purple-600 rounded-xl flex items-center justify-center text-white font-semibold cursor-pointer shadow-lg">
+                            <i class="fas fa-user text-sm"></i>
+                        </div>
                     </div>
                 </div>
             </div>
@@ -382,6 +631,7 @@
                         <div>
                             <label class="block text-sm font-medium text-gray-700 mb-2">Parameter</label>
                             <select id="parameterFilter" class="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500">
+                                <option value="">Select Parameter</option>
                                 <option value="RECHARGE">Groundwater Recharge</option>
                                 <option value="GWL">Groundwater Level</option>
                                 <option value="BASEFLOW">Groundwater Baseflow</option>
@@ -527,5 +777,3 @@
     <script src="/frontend/src/script.js"></script>
 </body>
 </html>
-                
-                     

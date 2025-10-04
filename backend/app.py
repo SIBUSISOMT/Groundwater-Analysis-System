@@ -1,6 +1,4 @@
-# AI-Enhanced Groundwater Analysis System Backend API
-# Complete implementation with advanced AI capabilities
-# Ready for production - works with existing database
+
 
 from flask import Flask, request, jsonify, send_file, render_template, send_from_directory
 from flask_cors import CORS
@@ -18,7 +16,7 @@ import json
 import asyncio
 from dataclasses import dataclass, asdict
 
-# Configure logging FIRST
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(levelname)s - %(message)s',
@@ -29,7 +27,7 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
-# Try to import OpenAI - optional dependency
+
 try:
     import openai
     OPENAI_AVAILABLE = True
@@ -38,20 +36,20 @@ except ImportError:
     OPENAI_AVAILABLE = False
     logger.warning("OpenAI library not installed - AI features will be limited to rule-based responses")
 
-# Initialize Flask app
+
 app = Flask(__name__, 
            template_folder='../frontend',
            static_folder='../frontend')
 CORS(app)
 
-# Configuration
+
 class Config:
     SQL_SERVER = os.getenv('SQL_SERVER', 'localhost')
     SQL_DATABASE = os.getenv('SQL_DATABASE', 'GroundwaterAnalysis') 
     SQL_USERNAME = os.getenv('SQL_USERNAME', '')
     SQL_PASSWORD = os.getenv('SQL_PASSWORD', '')
     
-    # Add missing attributes for app.run()
+ 
     DEBUG = os.getenv('DEBUG', 'False').lower() == 'true'
     API_HOST = os.getenv('API_HOST', '127.0.0.1')
     API_PORT = int(os.getenv('API_PORT', '5000'))
@@ -63,7 +61,7 @@ class Config:
     OPENAI_API_KEY = os.getenv('OPENAI_API_KEY', None)
     AI_ENABLED = bool(os.getenv('OPENAI_API_KEY', None))
     
-    # Shakhane et al. thresholds (EXACT from study)
+  
     THRESHOLDS = {
         'normal_upper': 0.5,
         'normal_lower': -0.5,
@@ -167,16 +165,16 @@ class DatabaseManager:
         INSERT INTO dbo.RawData (
             source_id, catchment_id, measurement_date, category,
             recharge_inches, recharge_converted, average_recharge, recharge_stdev, drought_index_recharge,
-            baseflow_value, average_baseflow, baseflow_stdev, standardized_baseflow,
+            baseflow_value, average_baseflow, baseflow_stdev, recharge_anomaly, standardized_baseflow,
             gw_level, average_gw_level, gw_level_stdev, standardized_gw_level,
             original_sheet_name
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?,?, ?)
         """
         
         params = (
             values.get('source_id'), values.get('catchment_id'), values.get('measurement_date'),
             values.get('category'), values.get('recharge_inches'), values.get('recharge_converted'),
-            values.get('average_recharge'), values.get('recharge_stdev'), values.get('drought_index_recharge'),
+            values.get('average_recharge'), values.get('recharge_stdev'),values.get('recharge_anomaly'), values.get('drought_index_recharge'),
             values.get('baseflow_value'), values.get('average_baseflow'), values.get('baseflow_stdev'),
             values.get('standardized_baseflow'), values.get('gw_level'), values.get('average_gw_level'),
             values.get('gw_level_stdev'), values.get('standardized_gw_level'), values.get('original_sheet_name')
@@ -292,9 +290,9 @@ class AIAssistant:
         quality_metrics = {
             "total_rows": total_rows,
             "total_columns": len(df.columns),
-            "missing_data_percentage": (df.isnull().sum().sum() / (total_rows * len(df.columns))) * 100 if total_rows > 0 else 0,
-            "duplicate_rows": df.duplicated().sum(),
-            "empty_rows": (df.isnull().all(axis=1)).sum()
+            "missing_data_percentage": float((df.isnull().sum().sum() / (total_rows * len(df.columns))) * 100 if total_rows > 0 else 0),
+            "duplicate_rows": int(df.duplicated().sum()),
+            "empty_rows": int((df.isnull().all(axis=1)).sum())
         }
         
         if quality_metrics["missing_data_percentage"] > 50:
@@ -341,7 +339,7 @@ class AIAssistant:
                     temporal_analysis.update({
                         "date_range_start": valid_dates.min().strftime('%Y-%m-%d'),
                         "date_range_end": valid_dates.max().strftime('%Y-%m-%d'),
-                        "total_time_points": len(valid_dates)
+                        "total_time_points": int(len(valid_dates))
                     })
             except Exception as e:
                 temporal_analysis["date_parsing_error"] = str(e)
@@ -406,7 +404,7 @@ class AIAssistant:
         try:
             message = message.strip().lower()
             
-            # Methodology questions
+           
             if any(term in message for term in ['z-score', 'zscore', 'formula']):
                 formula_info = self.methodology_knowledge["zscore_formula"]
                 return {
@@ -442,7 +440,7 @@ class AIAssistant:
                     "type": "methodology"
                 }
             
-            # General help
+        
             if any(term in message for term in ['upload', 'file', 'data']):
                 return {
                     "content": "To upload data: 1) Select category and subcatchment, 2) Upload Excel file with required columns. The system validates data automatically.",
@@ -467,12 +465,11 @@ class AIAssistant:
                 "type": "error"
             }
 
-# Initialize components
+
 db = DatabaseManager()
 analyzer = GroundwaterAnalyzer()
 ai_assistant = AIAssistant(db, config.OPENAI_API_KEY)
 
-# ROUTES
 
 @app.route('/')
 def home():
@@ -525,7 +522,7 @@ def get_data_sources():
         """
         sources = db.execute_query(query)
         
-        # Convert dates to strings for JSON serialization
+       
         for source in sources:
             if source.get('upload_date'):
                 source['upload_date'] = source['upload_date'].isoformat() if hasattr(source['upload_date'], 'isoformat') else str(source['upload_date'])
@@ -567,7 +564,7 @@ def get_catchments():
         """
         catchments = db.execute_query(query)
         
-        # Convert dates to strings
+     
         for catchment in catchments:
             if catchment.get('earliest_date'):
                 catchment['earliest_date'] = catchment['earliest_date'].strftime('%Y-%m-%d') if hasattr(catchment['earliest_date'], 'strftime') else str(catchment['earliest_date'])
@@ -594,39 +591,53 @@ def get_data():
             'RECHARGE': 'recharge', 
             'BASEFLOW': 'baseflow'
         }
-        
-        db_category = parameter_mapping.get(parameter, 'recharge')
+      
+        db_category = None
+        if parameter and parameter != 'ALL':
+            db_category = parameter_mapping.get(parameter, None)
         
         base_query = """
-        SELECT rd.measurement_date, 
-               c.catchment_name, 
-               rd.source_id,
-               rd.category,
-               CASE 
-                   WHEN rd.category = 'gwlevel' THEN rd.gw_level
-                   WHEN rd.category = 'recharge' THEN rd.recharge_converted
-                   WHEN rd.category = 'baseflow' THEN rd.baseflow_value
-                   ELSE NULL
-               END as original_value,
-               CASE 
-                   WHEN rd.category = 'gwlevel' THEN rd.standardized_gw_level
-                   WHEN rd.category = 'recharge' THEN rd.drought_index_recharge
-                   WHEN rd.category = 'baseflow' THEN rd.standardized_baseflow
-                   ELSE NULL
-               END as zscore_value,
-               CASE 
-                   WHEN rd.category = 'gwlevel' THEN rd.average_gw_level
-                   WHEN rd.category = 'recharge' THEN rd.average_recharge
-                   WHEN rd.category = 'baseflow' THEN rd.average_baseflow
-                   ELSE NULL
-               END as average_value
+        SELECT 
+            rd.measurement_date, 
+            c.catchment_name, 
+            rd.source_id,
+            rd.category,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.gw_level
+                WHEN rd.category = 'recharge' THEN rd.recharge_converted
+                WHEN rd.category = 'baseflow' THEN rd.baseflow_value
+                ELSE NULL
+            END as original_value,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.standardized_gw_level
+                WHEN rd.category = 'recharge' THEN rd.drought_index_recharge
+                WHEN rd.category = 'baseflow' THEN rd.standardized_baseflow
+                ELSE NULL
+            END as zscore_value,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.average_gw_level
+                WHEN rd.category = 'recharge' THEN rd.average_recharge
+                WHEN rd.category = 'baseflow' THEN rd.average_baseflow
+                ELSE NULL
+            END as average_value,
+            CASE 
+                WHEN rd.category = 'gwlevel' AND rd.standardized_gw_level < -0.5 THEN 1
+                WHEN rd.category = 'recharge' AND rd.drought_index_recharge < -0.5 THEN 1
+                WHEN rd.category = 'baseflow' AND rd.standardized_baseflow < -0.5 THEN 1
+                ELSE 0
+            END as is_failure
         FROM dbo.RawData rd
         INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
-        WHERE rd.category = ?
+        WHERE 1=1
         """
         
         conditions = []
-        params = [db_category]
+        params = []
+        
+       
+        if db_category:
+            conditions.append("rd.category = ?")
+            params.append(db_category)
         
         if catchment_name and catchment_name.upper() != 'ALL':
             conditions.append("c.catchment_name = ?")
@@ -652,7 +663,7 @@ def get_data():
         limit = min(int(request.args.get('limit', 1000)), 10000)
         base_query += f" OFFSET 0 ROWS FETCH NEXT {limit} ROWS ONLY"
         
-        data = db.execute_query(base_query, tuple(params))
+        data = db.execute_query(base_query, tuple(params) if params else None)
         
         if not data:
             return jsonify({
@@ -664,8 +675,7 @@ def get_data():
                     'db_category': db_category
                 }
             }), 200
-        
-        # Format data
+
         formatted_data = []
         for row in data:
             formatted_row = {
@@ -675,15 +685,15 @@ def get_data():
                 'category': row['category'],
                 'original_value': float(row['original_value']) if row['original_value'] is not None else None,
                 'zscore': float(row['zscore_value']) if row['zscore_value'] is not None else None,
-                'average_value': float(row['average_value']) if row['average_value'] is not None else None
+                'average_value': float(row['average_value']) if row['average_value'] is not None else None,
+                'is_failure': int(row['is_failure'])
             }
             
-            # Add classification
+           
             if formatted_row['zscore'] is not None:
                 classification = analyzer.classify_threshold(formatted_row['zscore'])
                 formatted_row.update({
                     'classification': classification['level'],
-                    'is_failure': classification['is_failure'],
                     'severity_level': classification['severity']
                 })
             
@@ -692,33 +702,96 @@ def get_data():
         return jsonify({
             'data': formatted_data,
             'count': len(formatted_data),
-            'parameter': parameter,
-            'db_category': db_category
+            'parameter': parameter if parameter else 'ALL',
+            'db_category': db_category if db_category else 'ALL'
         }), 200
             
     except Exception as e:
         logger.error(f"Data API error: {e}")
+        logger.error(traceback.format_exc())
         return jsonify({
             'error': 'Failed to retrieve data',
             'details': str(e)
         }), 500
 
+        
 @app.route('/api/failure-analysis', methods=['GET'])
 def get_failure_analysis():
+    """
+    Analyze failures across all categories (Recharge, Baseflow, GWLevel)
+    
+    CRITICAL: For each individual record:
+    1. Check if standardized value < -0.5 (this is a failure)
+    2. Group records by time period
+    3. Calculate failure rate = (failures / total) * 100 for each period
+    4. Return period-level statistics
+    """
     try:
         catchment_name = request.args.get('catchment')
         start_date = request.args.get('start_date')
         end_date = request.args.get('end_date')
+        category = request.args.get('category') 
         
+
         base_query = """
         SELECT 
             c.catchment_name,
+            rd.measurement_date,
+            rd.category,
             YEAR(rd.measurement_date) as year,
             MONTH(rd.measurement_date) as month,
-            COUNT(*) as total_records,
-            SUM(CASE WHEN rd.category = 'recharge' AND rd.drought_index_recharge < -0.5 THEN 1 ELSE 0 END) as gwr_failures,
-            SUM(CASE WHEN rd.category = 'gwlevel' AND rd.standardized_gw_level < -0.5 THEN 1 ELSE 0 END) as gwl_failures,
-            SUM(CASE WHEN rd.category = 'baseflow' AND rd.standardized_baseflow < -0.5 THEN 1 ELSE 0 END) as gwb_failures
+            
+            -- Get the standardized value for each category
+            CASE 
+                WHEN rd.category = 'recharge' THEN rd.drought_index_recharge
+                WHEN rd.category = 'gwlevel' THEN rd.standardized_gw_level
+                WHEN rd.category = 'baseflow' THEN rd.standardized_baseflow
+                ELSE NULL
+            END as zscore_value,
+            
+            -- Get the original value
+            CASE 
+                WHEN rd.category = 'recharge' THEN rd.recharge_converted
+                WHEN rd.category = 'gwlevel' THEN rd.gw_level
+                WHEN rd.category = 'baseflow' THEN rd.baseflow_value
+                ELSE NULL
+            END as original_value,
+            
+            -- CRITICAL: Determine if this individual record is a failure
+            -- A failure occurs when standardized value < -0.5
+            CASE 
+                WHEN rd.category = 'recharge' AND rd.drought_index_recharge < -0.5 THEN 1
+                WHEN rd.category = 'gwlevel' AND rd.standardized_gw_level < -0.5 THEN 1
+                WHEN rd.category = 'baseflow' AND rd.standardized_baseflow < -0.5 THEN 1
+                ELSE 0
+            END as is_failure,
+            
+            -- Classify severity
+            CASE 
+                WHEN rd.category = 'recharge' THEN
+                    CASE 
+                        WHEN rd.drought_index_recharge >= -0.5 THEN 0
+                        WHEN rd.drought_index_recharge >= -1.0 THEN 1
+                        WHEN rd.drought_index_recharge >= -1.5 THEN 2
+                        ELSE 3
+                    END
+                WHEN rd.category = 'gwlevel' THEN
+                    CASE 
+                        WHEN rd.standardized_gw_level >= -0.5 THEN 0
+                        WHEN rd.standardized_gw_level >= -1.0 THEN 1
+                        WHEN rd.standardized_gw_level >= -1.5 THEN 2
+                        ELSE 3
+                    END
+                WHEN rd.category = 'baseflow' THEN
+                    CASE 
+                        WHEN rd.standardized_baseflow >= -0.5 THEN 0
+                        WHEN rd.standardized_baseflow >= -1.0 THEN 1
+                        WHEN rd.standardized_baseflow >= -1.5 THEN 2
+                        ELSE 3
+                    END
+                ELSE 0
+            END as severity_level
+            
         FROM dbo.RawData rd
         INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
         WHERE 1=1
@@ -738,19 +811,503 @@ def get_failure_analysis():
         if end_date:
             conditions.append("rd.measurement_date <= ?")
             params.append(end_date)
+        
+        if category:
+            conditions.append("rd.category = ?")
+            params.append(category.lower())
             
         if conditions:
             base_query += " AND " + " AND ".join(conditions)
             
-        base_query += " GROUP BY c.catchment_name, YEAR(rd.measurement_date), MONTH(rd.measurement_date)"
-        base_query += " ORDER BY c.catchment_name, YEAR(rd.measurement_date), MONTH(rd.measurement_date)"
+        base_query += " ORDER BY c.catchment_name, rd.measurement_date, rd.category"
         
-        analysis = db.execute_query(base_query, tuple(params) if params else None)
+       
+        logger.info(f"Executing failure analysis query with params: {params}")
+        raw_data = db.execute_query(base_query, tuple(params) if params else None)
         
-        return jsonify({'failure_analysis': analysis})
+        if not raw_data:
+            logger.warning("No data found for failure analysis")
+            return jsonify({
+                'failure_analysis': [], 
+                'message': 'No data found for the specified filters',
+                'summary': {
+                    'total_records': 0,
+                    'total_failures': 0,
+                    'overall_failure_rate': 0
+                }
+            })
+        
+        logger.info(f"Retrieved {len(raw_data)} individual records for failure analysis")
+        
+       
+        analysis_results = {}
+        
+        for record in raw_data:
+      
+            key = (
+                record['catchment_name'],
+                record['year'],
+                record['month'],
+                record['category']
+            )
+            
+            if key not in analysis_results:
+                analysis_results[key] = {
+                    'catchment_name': record['catchment_name'],
+                    'year': record['year'],
+                    'month': record['month'],
+                    'category': record['category'],
+                    'records': [],
+                    'failures': [],
+                    'total_records': 0,
+                    'total_failures': 0
+                }
+            
+            analysis_results[key]['records'].append(record)
+            analysis_results[key]['total_records'] += 1
+       
+            if record['is_failure'] == 1:
+                analysis_results[key]['failures'].append(record)
+                analysis_results[key]['total_failures'] += 1
+        
+        final_results = []
+        total_records_overall = 0
+        total_failures_overall = 0
+        
+        for key, data in analysis_results.items():
+            total_records = data['total_records']
+            total_failures = data['total_failures']
+            
+            total_records_overall += total_records
+            total_failures_overall += total_failures
+            
+          
+            failure_rate = (total_failures / total_records * 100) if total_records > 0 else 0
+            
+        
+            avg_failure_severity = 0
+            max_failure_severity = 0
+            if data['failures']:
+                severities = [f['severity_level'] for f in data['failures']]
+                avg_failure_severity = sum(severities) / len(severities)
+                max_failure_severity = max(severities)
+            
+            # Calculate average z-score for failures
+            avg_failure_zscore = 0
+            if data['failures']:
+                zscores = [abs(f['zscore_value']) for f in data['failures'] if f['zscore_value'] is not None]
+                if zscores:
+                    avg_failure_zscore = sum(zscores) / len(zscores)
+            
+            final_results.append({
+                'catchment_name': data['catchment_name'],
+                'year': data['year'],
+                'month': data['month'],
+                'category': data['category'].upper(),  # Display as uppercase
+                'total_records': total_records,
+                'total_failures': total_failures,
+                'failure_rate': round(failure_rate, 2),  # Percentage
+                'avg_failure_severity': round(avg_failure_severity, 2),
+                'max_failure_severity': max_failure_severity,
+                'avg_failure_zscore': round(avg_failure_zscore, 3),
+                'has_failures': total_failures > 0,
+                'severity_classification': 
+                    'Critical' if failure_rate > 50 else
+                    'High' if failure_rate > 30 else
+                    'Moderate' if failure_rate > 15 else
+                    'Low' if failure_rate > 0 else
+                    'None'
+            })
+        
+        # Sort by date and category
+        final_results.sort(key=lambda x: (x['year'], x['month'], x['category']), reverse=True)
+        
+        # Calculate overall statistics
+        overall_failure_rate = (total_failures_overall / total_records_overall * 100) if total_records_overall > 0 else 0
+        
+        # Group by category for summary
+        category_summary = {}
+        for result in final_results:
+            cat = result['category']
+            if cat not in category_summary:
+                category_summary[cat] = {
+                    'total_records': 0,
+                    'total_failures': 0,
+                    'periods_analyzed': 0
+                }
+            category_summary[cat]['total_records'] += result['total_records']
+            category_summary[cat]['total_failures'] += result['total_failures']
+            category_summary[cat]['periods_analyzed'] += 1
+        
+        # Calculate failure rate per category
+        for cat in category_summary:
+            total = category_summary[cat]['total_records']
+            failures = category_summary[cat]['total_failures']
+            category_summary[cat]['failure_rate'] = round((failures / total * 100) if total > 0 else 0, 2)
+        
+        logger.info(f"Failure analysis complete: {len(final_results)} periods analyzed")
+        logger.info(f"Overall failure rate: {overall_failure_rate:.2f}%")
+        
+        return jsonify({
+            'failure_analysis': final_results,
+            'summary': {
+                'total_records': total_records_overall,
+                'total_failures': total_failures_overall,
+                'overall_failure_rate': round(overall_failure_rate, 2),
+                'periods_analyzed': len(final_results),
+                'periods_with_failures': sum(1 for r in final_results if r['has_failures']),
+                'category_breakdown': category_summary
+            }
+        })
         
     except Exception as e:
         logger.error(f"Failed to get failure analysis: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
+
+
+# ========================================
+# HELPER ENDPOINT: Check Baseflow Data
+# ========================================
+@app.route('/api/debug/baseflow-check', methods=['GET'])
+def debug_baseflow_check():
+    """
+    Debug endpoint to verify baseflow data is stored correctly
+    """
+    try:
+        source_id = request.args.get('source_id')
+        
+        query = """
+        SELECT TOP 10
+            rd.raw_id,
+            rd.measurement_date,
+            c.catchment_name,
+            rd.category,
+            rd.baseflow_value,
+            rd.average_baseflow,
+            rd.baseflow_stdev,
+            rd.standardized_baseflow,
+            CASE 
+                WHEN rd.standardized_baseflow < -0.5 THEN 'FAILURE'
+                ELSE 'OK'
+            END as failure_status
+        FROM dbo.RawData rd
+        INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
+        WHERE rd.category = 'baseflow'
+        """
+        
+        params = []
+        if source_id:
+            query += " AND rd.source_id = ?"
+            params.append(int(source_id))
+        
+        query += " ORDER BY rd.measurement_date DESC"
+        
+        results = db.execute_query(query, tuple(params) if params else None)
+        
+        # Format dates
+        for row in results:
+            if row.get('measurement_date'):
+                row['measurement_date'] = row['measurement_date'].strftime('%Y-%m-%d') if hasattr(row['measurement_date'], 'strftime') else str(row['measurement_date'])
+        
+        # Count failures
+        failure_count = sum(1 for r in results if r['failure_status'] == 'FAILURE')
+        
+        return jsonify({
+            'data': results,
+            'count': len(results),
+            'failures_found': failure_count,
+            'failure_rate': round((failure_count / len(results) * 100) if results else 0, 2)
+        })
+        
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+    
+    
+    
+@app.route('/api/export-enhanced', methods=['GET'])
+def export_enhanced_data():
+    """Enhanced Excel export with formatting and multiple sheets"""
+    try:
+        catchment_name = request.args.get('catchment')
+        parameter = request.args.get('parameter', '').upper()
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Map parameter to database category
+        parameter_mapping = {
+            'GWL': 'gwlevel',
+            'RECHARGE': 'recharge',
+            'BASEFLOW': 'baseflow'
+        }
+        db_category = parameter_mapping.get(parameter, 'recharge') if parameter else None
+        
+        # Build query for raw data
+        base_query = """
+        SELECT 
+            rd.measurement_date,
+            c.catchment_name,
+            rd.category,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.gw_level
+                WHEN rd.category = 'recharge' THEN rd.recharge_converted
+                WHEN rd.category = 'baseflow' THEN rd.baseflow_value
+                ELSE NULL
+            END as original_value,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.average_gw_level
+                WHEN rd.category = 'recharge' THEN rd.average_recharge
+                WHEN rd.category = 'baseflow' THEN rd.average_baseflow
+                ELSE NULL
+            END as average_value,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.standardized_gw_level
+                WHEN rd.category = 'recharge' THEN rd.drought_index_recharge
+                WHEN rd.category = 'baseflow' THEN rd.standardized_baseflow
+                ELSE NULL
+            END as zscore
+        FROM dbo.RawData rd
+        INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
+        WHERE 1=1
+        """
+        
+        conditions = []
+        params = []
+        
+        if db_category:
+            conditions.append("rd.category = ?")
+            params.append(db_category)
+        
+        if catchment_name:
+            conditions.append("c.catchment_name = ?")
+            params.append(catchment_name)
+        
+        if start_date:
+            conditions.append("rd.measurement_date >= ?")
+            params.append(start_date)
+        
+        if end_date:
+            conditions.append("rd.measurement_date <= ?")
+            params.append(end_date)
+        
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        base_query += " ORDER BY rd.measurement_date DESC, c.catchment_name"
+        
+        # Execute query
+        data = db.execute_query(base_query, tuple(params) if params else None)
+        
+        if not data:
+            return jsonify({'error': 'No data to export'}), 400
+        
+        # Convert to DataFrame
+        df = pd.DataFrame(data)
+        
+        # Add classification
+        def classify_zscore(zscore):
+            if pd.isna(zscore):
+                return 'Normal'
+            classification = analyzer.classify_threshold(zscore)
+            return classification['level']
+        
+        if 'zscore' in df.columns:
+            df['classification'] = df['zscore'].apply(classify_zscore)
+            df['is_failure'] = df['zscore'].apply(
+                lambda z: analyzer.classify_threshold(z)['is_failure'] if pd.notna(z) else False
+            )
+        
+        # Create Excel workbook with multiple sheets
+        output = BytesIO()
+        
+        with pd.ExcelWriter(output, engine='openpyxl') as writer:
+            # Sheet 1: Raw Data
+            df.to_excel(writer, sheet_name='Raw Data', index=False)
+            
+            # Sheet 2: Summary Statistics
+            summary_data = {
+                'Metric': ['Total Records', 'Failure Count', 'Failure Rate (%)', 'Date Range Start', 'Date Range End'],
+                'Value': [
+                    len(df),
+                    int(df['is_failure'].sum()) if 'is_failure' in df.columns else 0,
+                    f"{(df['is_failure'].sum() / len(df) * 100):.2f}" if 'is_failure' in df.columns and len(df) > 0 else "0.00",
+                    df['measurement_date'].min() if len(df) > 0 else 'N/A',
+                    df['measurement_date'].max() if len(df) > 0 else 'N/A'
+                ]
+            }
+            summary_df = pd.DataFrame(summary_data)
+            summary_df.to_excel(writer, sheet_name='Summary', index=False)
+            
+            # Sheet 3: Catchment Statistics
+            if 'catchment_name' in df.columns:
+                catchment_stats = df.groupby('catchment_name').agg({
+                    'measurement_date': 'count',
+                    'is_failure': 'sum' if 'is_failure' in df.columns else 'count',
+                    'original_value': 'mean',
+                    'zscore': 'mean'
+                }).reset_index()
+                catchment_stats.columns = ['Catchment', 'Total Records', 'Failures', 'Avg Original Value', 'Avg Z-Score']
+                if 'Failures' in catchment_stats.columns and 'Total Records' in catchment_stats.columns:
+                    catchment_stats['Failure Rate (%)'] = (catchment_stats['Failures'] / catchment_stats['Total Records'] * 100).round(2)
+                catchment_stats.to_excel(writer, sheet_name='Catchment Stats', index=False)
+        
+        output.seek(0)
+        
+        # Generate filename
+        timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+        filename = f"groundwater_report_{timestamp}.xlsx"
+        
+        return send_file(
+            output,
+            mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+            as_attachment=True,
+            download_name=filename
+        )
+        
+    except Exception as e:
+        logger.error(f"Enhanced export failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/data-summary', methods=['GET'])
+def get_data_summary():
+    """Get comprehensive data summary for reports"""
+    try:
+        catchment_name = request.args.get('catchment')
+        parameter = request.args.get('parameter')
+        start_date = request.args.get('start_date')
+        end_date = request.args.get('end_date')
+        
+        # Build base query
+        base_query = """
+        SELECT 
+            COUNT(*) as total_records,
+            COUNT(DISTINCT c.catchment_name) as catchment_count,
+            MIN(rd.measurement_date) as min_date,
+            MAX(rd.measurement_date) as max_date,
+            SUM(CASE 
+                WHEN (rd.category = 'gwlevel' AND rd.standardized_gw_level < -0.5)
+                    OR (rd.category = 'recharge' AND rd.drought_index_recharge < -0.5)
+                    OR (rd.category = 'baseflow' AND rd.standardized_baseflow < -0.5)
+                THEN 1 ELSE 0 
+            END) as failure_count
+        FROM dbo.RawData rd
+        INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
+        WHERE 1=1
+        """
+        
+        conditions = []
+        params = []
+        
+        if catchment_name:
+            conditions.append("c.catchment_name = ?")
+            params.append(catchment_name)
+        
+        if parameter:
+            parameter_mapping = {'GWL': 'gwlevel', 'RECHARGE': 'recharge', 'BASEFLOW': 'baseflow'}
+            db_category = parameter_mapping.get(parameter.upper())
+            if db_category:
+                conditions.append("rd.category = ?")
+                params.append(db_category)
+        
+        if start_date:
+            conditions.append("rd.measurement_date >= ?")
+            params.append(start_date)
+        
+        if end_date:
+            conditions.append("rd.measurement_date <= ?")
+            params.append(end_date)
+        
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        result = db.execute_query(base_query, tuple(params) if params else None)
+        
+        if result and len(result) > 0:
+            summary = result[0]
+            total = summary['total_records'] or 0
+            failures = summary['failure_count'] or 0
+            
+            return jsonify({
+                'total_records': total,
+                'catchment_count': summary['catchment_count'] or 0,
+                'date_range': {
+                    'start': summary['min_date'].strftime('%Y-%m-%d') if summary['min_date'] else None,
+                    'end': summary['max_date'].strftime('%Y-%m-%d') if summary['max_date'] else None
+                },
+                'failure_count': failures,
+                'failure_rate': round((failures / total * 100), 2) if total > 0 else 0
+            })
+        else:
+            return jsonify({
+                'total_records': 0,
+                'catchment_count': 0,
+                'date_range': {'start': None, 'end': None},
+                'failure_count': 0,
+                'failure_rate': 0
+            })
+        
+    except Exception as e:
+        logger.error(f"Summary generation failed: {e}")
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/export-pdf-data', methods=['GET'])
+def export_pdf_data():
+    """Prepare data specifically formatted for PDF export"""
+    try:
+        filters = {
+            'catchment': request.args.get('catchment'),
+            'parameter': request.args.get('parameter'),
+            'start_date': request.args.get('start_date'),
+            'end_date': request.args.get('end_date')
+        }
+        
+        # Build query parameters
+        conditions = []
+        params = []
+        
+        base_query = "SELECT * FROM dbo.RawData WHERE 1=1"
+        
+        if filters['catchment']:
+            conditions.append("catchment_id IN (SELECT catchment_id FROM dbo.Catchments WHERE catchment_name = ?)")
+            params.append(filters['catchment'])
+        
+        if filters['parameter']:
+            param_mapping = {'GWL': 'gwlevel', 'RECHARGE': 'recharge', 'BASEFLOW': 'baseflow'}
+            db_category = param_mapping.get(filters['parameter'].upper())
+            if db_category:
+                conditions.append("category = ?")
+                params.append(db_category)
+        
+        if filters['start_date']:
+            conditions.append("measurement_date >= ?")
+            params.append(filters['start_date'])
+        
+        if filters['end_date']:
+            conditions.append("measurement_date <= ?")
+            params.append(filters['end_date'])
+        
+        if conditions:
+            base_query += " AND " + " AND ".join(conditions)
+        
+        # Fetch data
+        data_response = db.execute_query(base_query, tuple(params) if params else None)
+        
+        # Fetch metrics
+        metrics_query = "SELECT * FROM dbo.PerformanceMetrics"
+        metrics_response = db.execute_query(metrics_query)
+        
+        return jsonify({
+            'report_date': datetime.now().isoformat(),
+            'filters': filters,
+            'data': data_response,
+            'metrics': metrics_response,
+            'record_count': len(data_response) if data_response else 0
+        })
+        
+    except Exception as e:
+        logger.error(f"PDF data preparation failed: {e}")
         return jsonify({'error': str(e)}), 500
 
 @app.route('/api/upload', methods=['POST'])
@@ -776,19 +1333,9 @@ def upload_file():
         file.save(filepath)
         file_size_kb = os.path.getsize(filepath) // 1024
 
-        # Check file size against config
         if os.path.getsize(filepath) > Config.MAX_FILE_SIZE:
-            os.remove(filepath)  # Clean up
-            return jsonify({'error': f'File size exceeds maximum allowed size of {Config.MAX_FILE_SIZE // (1024*1024)}MB'}), 400
-
-        # AI Pre-analysis
-        ai_insights = {}
-        try:
-            df = pd.read_excel(filepath)
-            ai_insights = ai_assistant.analyze_upload_data(df, category, subcatchment)
-        except Exception as ai_error:
-            logger.warning(f"AI pre-analysis failed: {ai_error}")
-            ai_insights = {'error': 'AI analysis unavailable', 'recommendations': []}
+            os.remove(filepath)
+            return jsonify({'error': f'File size exceeds maximum allowed size'}), 400
 
         # Create data source record
         source_id = db.insert_data_source(filename, file_size_kb, category, subcatchment)
@@ -797,43 +1344,87 @@ def upload_file():
 
         # Process Excel file
         try:
-            df = pd.read_excel(filepath)
+            excel_file = pd.ExcelFile(filepath)
+            logger.info(f"Excel file contains sheets: {excel_file.sheet_names}")
+            
+            # Find the sheet that matches the subcatchment
+            target_sheet = None
+            for sheet_name in excel_file.sheet_names:
+                if subcatchment.lower() in sheet_name.lower():
+                    target_sheet = sheet_name
+                    break
+            
+            if not target_sheet:
+                # If no exact match, use first sheet or sheet with subcatchment name
+                target_sheet = excel_file.sheet_names[0]
+                logger.warning(f"No exact match for '{subcatchment}', using sheet: {target_sheet}")
+            
+            logger.info(f"Processing sheet: {target_sheet}")
+            df = pd.read_excel(filepath, sheet_name=target_sheet)
+            
         except Exception as e:
             db.update_data_source_status(source_id, 'Failed', f'Failed to read Excel file: {str(e)}')
             return jsonify({'error': f'Failed to read Excel file: {str(e)}'}), 400
         
-        # Clean column names
+        # Clean column names - CRITICAL for baseflow
         df.columns = df.columns.str.strip()
         original_columns = list(df.columns)
         df.columns = df.columns.str.lower()
 
         logger.info(f"Excel columns found: {original_columns}")
 
-        # Map columns based on category
-        if category.lower() == 'gwlevel':
+        # ===== BASEFLOW SPECIFIC PROCESSING =====
+        if category.lower() == 'baseflow':
+            # Expected columns for baseflow
+            required = ['date (months)', 'baseflow', 'average baseflow', 'stdev', 'standardized baseflow']
+            
+            # Map variations of column names
+            column_mapping = {
+                'date (months)': ['date (months)', 'date', 'date(months)', 'months'],
+                'baseflow': ['baseflow', 'base flow'],
+                'average baseflow': ['average baseflow', 'avg baseflow', 'average base flow'],
+                'stdev': ['stdev', 'std dev', 'standard deviation', 'std'],
+                'standardized baseflow': ['standardized baseflow', 'standardized base flow', 'std baseflow']
+            }
+            
+            # Find actual column names in the dataframe
+            actual_columns = {}
+            for expected, variations in column_mapping.items():
+                found = False
+                for var in variations:
+                    if var in df.columns:
+                        actual_columns[expected] = var
+                        found = True
+                        break
+                if not found:
+                    error_msg = f'Missing column: {expected}. Available columns: {list(df.columns)}'
+                    db.update_data_source_status(source_id, 'Failed', error_msg)
+                    return jsonify({'error': error_msg}), 400
+            
+            logger.info(f"Mapped columns: {actual_columns}")
+            
+            # Rename columns to standardized names
+            df.rename(columns={v: k for k, v in actual_columns.items()}, inplace=True)
+            
+        elif category.lower() == 'gwlevel':
             required = ['date', 'gw level', 'average gw level', 'stdev', 'standardized gw level']
+            
         elif category.lower() == 'recharge':
-            required = ['date', 'recharge (inches)', 'recharge', 'average recharge', 'stdev', 'drought index - recharge']
-        elif category.lower() == 'baseflow':
-            required = ['date', 'baseflow', 'average baseflow', 'stdev', 'standardized baseflow']
+            required = ['date', 'recharge (inches)', 'recharge', 'average recharge', 'stdev', 'recharge_anomaly', 'stdev', 'drought index - recharge']
+            
         else:
             db.update_data_source_status(source_id, 'Failed', f'Unknown category: {category}')
             return jsonify({'error': f'Unknown category: {category}'}), 400
 
+        # For baseflow, the date column might be 'date (months)'
+        date_column = 'date (months)' if 'date (months)' in df.columns else 'date'
+        
         # Check for required columns
         missing = [col for col in required if col not in df.columns]
         if missing:
             error_msg = f'Missing columns: {missing}. Available columns: {list(df.columns)}'
             db.update_data_source_status(source_id, 'Failed', error_msg)
-            
-            return jsonify({
-                'error': error_msg,
-                'ai_help': {
-                    'missing_columns': missing,
-                    'suggestions': f"Please ensure your Excel file has these exact column names: {required}",
-                    'ask_ai': 'Use the chat assistant for column mapping help'
-                }
-            }), 400
+            return jsonify({'error': error_msg}), 400
 
         # Process records
         total_inserted = 0
@@ -847,12 +1438,13 @@ def upload_file():
             db.update_data_source_status(source_id, 'Failed', error_msg)
             return jsonify({'error': error_msg}), 500
 
-        logger.info(f"Processing {len(df)} rows for catchment_id: {catchment_id}")
+        logger.info(f"Processing {len(df)} rows for catchment_id: {catchment_id}, category: {category}")
         
         # Process each row
         for idx, row in df.iterrows():
             try:
-                raw_date = row['date']
+                # Get date from the correct column
+                raw_date = row[date_column]
                 
                 # Skip rows with empty/null dates
                 if pd.isna(raw_date) or raw_date == '' or raw_date is None:
@@ -877,7 +1469,6 @@ def upload_file():
                             date_str_for_range = temp_date.strftime('%Y-%m-%d')
                         else:
                             continue
-
                 except Exception as date_error:
                     logger.warning(f"Row {idx}: Date parsing error for '{raw_date}': {str(date_error)}")
                     continue
@@ -909,12 +1500,42 @@ def upload_file():
                     'source_id': source_id,
                     'catchment_id': catchment_id,
                     'measurement_date': parsed_date,
-                    'category': category,
+                    'category': category.lower(),  # Store as lowercase
                     'original_sheet_name': subcatchment
                 }
 
-                # Category-specific processing
-                if category.lower() == 'gwlevel':
+                # ===== BASEFLOW SPECIFIC DATA EXTRACTION =====
+                if category.lower() == 'baseflow':
+                    baseflow_val = safe_float(row.get('baseflow'))
+                    avg_baseflow = safe_float(row.get('average baseflow'))
+                    baseflow_stdev = safe_float(row.get('stdev'))
+                    std_baseflow = safe_float(row.get('standardized baseflow'))
+                    
+                   
+                    if baseflow_val is None:
+                        logger.warning(f"Row {idx}: Missing baseflow value, skipping")
+                        continue
+                    
+                    values.update({
+                        'baseflow_value': baseflow_val,
+                        'average_baseflow': avg_baseflow,
+                        'baseflow_stdev': baseflow_stdev,
+                        'standardized_baseflow': std_baseflow,
+                        # Set other category fields to NULL
+                        'recharge_inches': None, 
+                        'recharge_converted': None, 
+                        'average_recharge': None,
+                        'recharge_stdev': None, 
+                        'drought_index_recharge': None,
+                        'gw_level': None, 
+                        'average_gw_level': None, 
+                        'gw_level_stdev': None,
+                        'standardized_gw_level': None
+                    })
+                    
+                    logger.info(f"Row {idx}: Baseflow={baseflow_val}, Avg={avg_baseflow}, StdDev={baseflow_stdev}, Standardized={std_baseflow}")
+                    
+                elif category.lower() == 'gwlevel':
                     gw_level = safe_float(row.get('gw level'))
                     avg_gw_level = safe_float(row.get('average gw level'))
                     gw_stdev = safe_float(row.get('stdev'))
@@ -936,43 +1557,42 @@ def upload_file():
                     recharge_converted = safe_float(row.get('recharge'))
                     avg_recharge = safe_float(row.get('average recharge'))
                     recharge_stdev = safe_float(row.get('stdev'))
+                    recharge_anomaly = safe_float(row.get('recharge_anomaly')) 
                     drought_index = safe_float(row.get('drought index - recharge'))
-                    
+
+                    if recharge_anomaly is None and recharge_converted is not None and avg_recharge is not None:
+                        recharge_anomaly = recharge_converted - avg_recharge
+
                     values.update({
-                        'recharge_inches': recharge_inches, 'recharge_converted': recharge_converted,
-                        'average_recharge': avg_recharge, 'recharge_stdev': recharge_stdev,
+                        'recharge_inches': recharge_inches, 
+                        'recharge_converted': recharge_converted,
+                        'average_recharge': avg_recharge, 
+                        'recharge_stdev': recharge_stdev,
+                        'recharge_anomaly': recharge_anomaly,
                         'drought_index_recharge': drought_index,
                         'baseflow_value': None, 'average_baseflow': None, 'baseflow_stdev': None,
-                        'standardized_baseflow': None, 'gw_level': None, 'average_gw_level': None,
+                        'standardized_baseflow': None, 
+                        'gw_level': None, 'average_gw_level': None,
                         'gw_level_stdev': None, 'standardized_gw_level': None
-                    })
-                    
-                elif category.lower() == 'baseflow':
-                    baseflow_val = safe_float(row.get('baseflow'))
-                    avg_baseflow = safe_float(row.get('average baseflow'))
-                    baseflow_stdev = safe_float(row.get('stdev'))
-                    std_baseflow = safe_float(row.get('standardized baseflow'))
-                    
-                    values.update({
-                        'baseflow_value': baseflow_val, 'average_baseflow': avg_baseflow,
-                        'baseflow_stdev': baseflow_stdev, 'standardized_baseflow': std_baseflow,
-                        'recharge_inches': None, 'recharge_converted': None, 'average_recharge': None,
-                        'recharge_stdev': None, 'drought_index_recharge': None,
-                        'gw_level': None, 'average_gw_level': None, 'gw_level_stdev': None,
-                        'standardized_gw_level': None
                     })
                 
                 # Insert record
                 try:
                     db.insert_raw_data(values)
                     total_inserted += 1
+                    
+                    if total_inserted % 10 == 0:
+                        logger.info(f"Inserted {total_inserted} records so far...")
+                        
                 except Exception as insert_error:
                     error_msg = f"Row {idx}: Insert failed - {str(insert_error)}"
+                    logger.error(error_msg)
                     errors.append(error_msg)
                     continue
                 
             except Exception as row_error:
                 error_msg = f"Row {idx}: Processing error - {str(row_error)}"
+                logger.error(error_msg)
                 errors.append(error_msg)
                 continue
 
@@ -983,8 +1603,7 @@ def upload_file():
             return jsonify({
                 'error': 'Failed to process any records',
                 'details': errors[:10],
-                'total_errors': len(errors),
-                'ai_help': 'Ask the AI assistant about these specific errors for troubleshooting help'
+                'total_errors': len(errors)
             }), 400
         else:
             if errors:
@@ -1003,7 +1622,7 @@ def upload_file():
         except:
             pass
 
-        # Try to run stored procedure for processing
+        # Process data through stored procedure
         try:
             db.execute_query("EXEC sp_ProcessRawData ?", (source_id,), fetch=False)
             logger.info(f"Stored procedure executed for source_id: {source_id}")
@@ -1011,22 +1630,21 @@ def upload_file():
             logger.warning(f"Stored procedure execution failed: {proc_error}")
 
         return jsonify({
-            'message': 'File uploaded and processed successfully with AI analysis.',
+            'message': f'{category} data uploaded and processed successfully.',
             'processed_records': total_inserted,
             'errors': len(errors),
             'error_details': errors[:10] if errors else None,
             'date_range': f"{date_range_start} to {date_range_end}" if date_range_start and date_range_end else None,
             'source_id': source_id,
-            'ai_insights': ai_insights,
-            'data_quality_score': ai_insights.get('data_quality', {}).get('quality_score', 'Unknown')
+            'category': category,
+            'subcatchment': subcatchment,
+            'sheet_processed': target_sheet
         }), 200
 
     except Exception as e:
-        logger.error(f"Enhanced upload failed: {e}")
-        return jsonify({
-            'error': str(e),
-            'ai_support': 'Contact AI assistant for troubleshooting help'
-        }), 500
+        logger.error(f"Upload failed: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/sources/<int:source_id>', methods=['DELETE'])
 def delete_source(source_id):

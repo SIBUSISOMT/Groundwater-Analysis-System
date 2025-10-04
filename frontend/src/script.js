@@ -1,20 +1,228 @@
-class AIEnhancedGroundwaterSystem {
-    constructor() {
-        this.apiEndpoints = [
-            'http://localhost:5000/api',
-            'http://127.0.0.1:5000/api'
-        ];
-        this.apiBase = this.apiEndpoints[0];
-        this.charts = {};
-        this.currentData = null;
-        this.isLoading = false;
-        this.initialized = false;
-        this.diagnostics = new DiagnosticsPanel();
-        this.aiAssistant = new AdvancedAIAssistant(this); // UPDATED: Advanced AI Assistant
-        
-        this.init();
+
+// ADD this new Pagination class before the AIEnhancedGroundwaterSystem class:
+class TablePagination {
+    constructor(containerId, rowsPerPage = 15) {
+        this.containerId = containerId;
+        this.rowsPerPage = rowsPerPage;
+        this.currentPage = 1;
+        this.totalPages = 1;
+        this.allData = [];
     }
     
+    setData(data) {
+        this.allData = data;
+        this.totalPages = Math.ceil(data.length / this.rowsPerPage);
+        this.currentPage = 1;
+    }
+    
+    getCurrentPageData() {
+        const startIndex = (this.currentPage - 1) * this.rowsPerPage;
+        const endIndex = startIndex + this.rowsPerPage;
+        return this.allData.slice(startIndex, endIndex);
+    }
+    
+    nextPage() {
+        if (this.currentPage < this.totalPages) {
+            this.currentPage++;
+            return true;
+        }
+        return false;
+    }
+    
+    prevPage() {
+        if (this.currentPage > 1) {
+            this.currentPage--;
+            return true;
+        }
+        return false;
+    }
+    
+    goToPage(pageNum) {
+        if (pageNum >= 1 && pageNum <= this.totalPages) {
+            this.currentPage = pageNum;
+            return true;
+        }
+        return false;
+    }
+    
+    renderPaginationControls() {
+    if (this.totalPages <= 1) return '';
+    
+    const startRecord = ((this.currentPage - 1) * this.rowsPerPage) + 1;
+    const endRecord = Math.min(this.currentPage * this.rowsPerPage, this.allData.length);
+    
+    // Use the containerId directly in the onclick handlers
+    const prevHandler = `window.app.pagination['${this.containerId}'].handlePrev()`;
+    const nextHandler = `window.app.pagination['${this.containerId}'].handleNext()`;
+    
+    return `
+        <div class="flex items-center justify-between px-4 py-3 bg-gray-50 border-t border-gray-200">
+            <div class="flex items-center gap-2 text-sm text-gray-600">
+                <span>Showing ${startRecord}-${endRecord} of ${this.allData.length} records</span>
+            </div>
+            
+            <div class="flex items-center gap-2">
+                <button 
+                    onclick="${prevHandler}"
+                    ${this.currentPage === 1 ? 'disabled' : ''}
+                    class="px-3 py-1 text-sm border rounded ${this.currentPage === 1 ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white hover:bg-gray-50 text-gray-700'}"
+                >
+                    <i class="fas fa-chevron-left"></i> Previous
+                </button>
+                
+                <div class="flex items-center gap-1">
+                    ${this.renderPageNumbers()}
+                </div>
+                
+                <button 
+                    onclick="${nextHandler}"
+                    ${this.currentPage === this.totalPages ? 'disabled' : ''}
+                    class="px-3 py-1 text-sm border rounded ${this.currentPage === this.totalPages ? 'bg-gray-100 text-gray-400 cursor-not-allowed' : 'bg-white hover:bg-gray-50 text-gray-700'}"
+                >
+                    Next <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>
+    `;
+}
+    
+    renderPageNumbers() {
+        const pages = [];
+        const maxVisible = 5;
+        
+        if (this.totalPages <= maxVisible) {
+            for (let i = 1; i <= this.totalPages; i++) {
+                pages.push(this.renderPageButton(i));
+            }
+        } else {
+            pages.push(this.renderPageButton(1));
+            
+            if (this.currentPage > 3) {
+                pages.push('<span class="px-2 text-gray-500">...</span>');
+            }
+            
+            const start = Math.max(2, this.currentPage - 1);
+            const end = Math.min(this.totalPages - 1, this.currentPage + 1);
+            
+            for (let i = start; i <= end; i++) {
+                pages.push(this.renderPageButton(i));
+            }
+            
+            if (this.currentPage < this.totalPages - 2) {
+                pages.push('<span class="px-2 text-gray-500">...</span>');
+            }
+            
+            pages.push(this.renderPageButton(this.totalPages));
+        }
+        
+        return pages.join('');
+    }
+    
+  renderPageButton(pageNum) {
+    const isActive = pageNum === this.currentPage;
+    const clickHandler = `window.app.pagination['${this.containerId}'].handlePageClick(${pageNum})`;
+    
+    return `
+        <button 
+            onclick="${clickHandler}"
+            class="px-3 py-1 text-sm border rounded ${isActive ? 'bg-blue-600 text-white border-blue-600' : 'bg-white hover:bg-gray-50 text-gray-700'}"
+        >
+            ${pageNum}
+        </button>
+    `;
+}
+}
+
+class AIEnhancedGroundwaterSystem {
+ constructor() {
+    this.apiEndpoints = [
+        'http://localhost:5000/api',
+        'http://127.0.0.1:5000/api'
+    ];
+    this.apiBase = this.apiEndpoints[0];
+    this.charts = {};
+    this.currentData = null;
+    this.isLoading = false;
+    this.initialized = false;
+    this.diagnostics = new DiagnosticsPanel();
+    this.aiAssistant = new AdvancedAIAssistant(this);
+    
+    // ADD: Pagination instances
+this.pagination = {
+    dataSourcesTable: new TablePagination('dataSourcesTable', 15),
+    failureAnalysisTable: new TablePagination('failureAnalysisTable', 15)
+};
+
+this.init();
+    
+    this.init();
+}
+    
+
+setupPaginationHandlers() {
+    // Data Sources Table pagination handlers
+    this.pagination.dataSourcesTable.handleNext = () => {
+        if (this.pagination.dataSourcesTable.nextPage()) {
+            const container = document.getElementById('dataSourcesTable');
+            if (container) {
+                this.renderDataSourcesTable(
+                    this.pagination.dataSourcesTable.allData, 
+                    container
+                );
+            }
+        }
+    };
+    
+    this.pagination.dataSourcesTable.handlePrev = () => {
+        if (this.pagination.dataSourcesTable.prevPage()) {
+            const container = document.getElementById('dataSourcesTable');
+            if (container) {
+                this.renderDataSourcesTable(
+                    this.pagination.dataSourcesTable.allData, 
+                    container
+                );
+            }
+        }
+    };
+    
+    this.pagination.dataSourcesTable.handlePageClick = (pageNum) => {
+        if (this.pagination.dataSourcesTable.goToPage(pageNum)) {
+            const container = document.getElementById('dataSourcesTable');
+            if (container) {
+                this.renderDataSourcesTable(
+                    this.pagination.dataSourcesTable.allData, 
+                    container
+                );
+            }
+        }
+    };
+    
+    // Failure Analysis Table pagination handlers
+    this.pagination.failureAnalysisTable.handleNext = () => {
+        if (this.pagination.failureAnalysisTable.nextPage()) {
+            this.updateFailureAnalysisTable(
+                this.pagination.failureAnalysisTable.allData
+            );
+        }
+    };
+    
+    this.pagination.failureAnalysisTable.handlePrev = () => {
+        if (this.pagination.failureAnalysisTable.prevPage()) {
+            this.updateFailureAnalysisTable(
+                this.pagination.failureAnalysisTable.allData
+            );
+        }
+    };
+    
+    this.pagination.failureAnalysisTable.handlePageClick = (pageNum) => {
+        if (this.pagination.failureAnalysisTable.goToPage(pageNum)) {
+            this.updateFailureAnalysisTable(
+                this.pagination.failureAnalysisTable.allData
+            );
+        }
+    };
+}
+ 
     async init() {
         if (this.initialized) return;
         
@@ -64,6 +272,67 @@ class AIEnhancedGroundwaterSystem {
         this.updateConnectionStatus('failed');
         return false;
     }
+
+    // MODIFY the init() method to load and display initial data:
+async init() {
+    if (this.initialized) return;
+    
+    try {
+        this.diagnostics.log('Initializing AI-enhanced system', 'info');
+        this.setupEventListeners();
+        
+        const apiAvailable = await this.testApiConnectivity();
+        
+        if (apiAvailable) {
+            await this.loadInitialData();
+            this.initializeCharts();
+            
+            // NEW: Load and display ALL data on first load
+            await this.loadAndDisplayInitialCharts();
+            
+            this.diagnostics.log('AI system ready', 'good');
+            this.showMessage('AI-Enhanced Groundwater Analysis System initialized successfully', 'success');
+        } else {
+            this.diagnostics.log('API server not responding', 'bad');
+            this.showMessage('Backend server not responding. Please check if the server is running.', 'error');
+        }
+        
+        this.initialized = true;
+    } catch (error) {
+        this.diagnostics.log(`Initialization failed: ${error.message}`, 'bad');
+        this.showMessage('System initialization failed', 'error');
+    }
+}
+
+// ADD this new method to load initial chart data:
+async loadAndDisplayInitialCharts() {
+    try {
+        this.diagnostics.log('Loading initial visualization data', 'info');
+        
+        // Fetch all data without filters for initial display
+        const response = await this.makeApiRequest('/data?parameter=RECHARGE');
+        const result = await response.json();
+        
+        if (result.data && result.data.length > 0) {
+            this.currentData = result.data;
+            this.diagnostics.log(`Initial data loaded: ${this.currentData.length} records`, 'good');
+            
+            // Update charts with initial data
+            this.updateCharts();
+            
+            // Load initial metrics (overall system metrics)
+            await this.loadMetrics({});
+            await this.loadFailureAnalysis({});
+            
+            this.showMessage(`Displaying ${this.currentData.length} records (all data)`, 'info');
+        } else {
+            this.diagnostics.log('No initial data available', 'warning');
+        }
+    } catch (error) {
+        this.diagnostics.log(`Initial data load failed: ${error.message}`, 'warning');
+        // Don't show error to user - they can still upload data
+    }
+}
     
     updateConnectionStatus(status) {
         const indicator = document.getElementById('statusIndicator');
@@ -226,67 +495,78 @@ class AIEnhancedGroundwaterSystem {
             this.diagnostics.log(`Failed to load data sources: ${error.message}`, 'warning');
         }
     }
+
     
-    renderDataSourcesTable(sources, container) {
-        const table = `
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-2 text-left">File Name</th>
-                            <th class="px-4 py-2 text-left">Upload Date</th>
-                            <th class="px-4 py-2 text-left">Records</th>
-                            <th class="px-4 py-2 text-left">Status</th>
-                            <th class="px-4 py-2 text-left">AI Score</th>
-                            <th class="px-4 py-2 text-left">Actions</th>
+    
+   renderDataSourcesTable(sources, container) {
+    // Store all data in pagination
+    this.pagination.dataSourcesTable.setData(sources);
+    
+    // Get current page data
+    const pageData = this.pagination.dataSourcesTable.getCurrentPageData();
+    
+    const table = `
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left">File Name</th>
+                        <th class="px-4 py-2 text-left">Upload Date</th>
+                        <th class="px-4 py-2 text-left">Records</th>
+                        <th class="px-4 py-2 text-left">Status</th>
+                        <th class="px-4 py-2 text-left">AI Score</th>
+                        <th class="px-4 py-2 text-left">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${pageData.map(source => `
+                        <tr class="border-b hover:bg-gray-50">
+                            <td class="px-4 py-2">${source.file_name || 'Unknown'}</td>
+                            <td class="px-4 py-2">${source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'N/A'}</td>
+                            <td class="px-4 py-2">${source.processed_records || 0}</td>
+                            <td class="px-4 py-2">
+                                <span class="px-2 py-1 text-xs rounded ${
+                                    source.processing_status === 'Completed' ? 'bg-green-100 text-green-800' :
+                                    source.processing_status === 'Failed' ? 'bg-red-100 text-red-800' :
+                                    'bg-yellow-100 text-yellow-800'
+                                }">
+                                    ${source.processing_status || 'Unknown'}
+                                </span>
+                            </td>
+                            <td class="px-4 py-2">
+                                <div class="flex items-center">
+                                    <div class="w-2 h-2 rounded-full ${
+                                        source.processing_status === 'Completed' ? 'bg-green-400' : 
+                                        source.processing_status === 'Failed' ? 'bg-red-400' : 'bg-yellow-400'
+                                    } mr-2"></div>
+                                    <span class="text-xs">${
+                                        source.processing_status === 'Completed' ? 'Good' : 
+                                        source.processing_status === 'Failed' ? 'Poor' : 'Processing'
+                                    }</span>
+                                </div>
+                            </td>
+                            <td class="px-4 py-2">
+                                <button onclick="app.viewSource(${source.source_id})" class="text-blue-600 hover:text-blue-800 mr-2" title="View">
+                                    <i class="fas fa-eye"></i>
+                                </button>
+                                <button onclick="app.getSourceAIAnalysis(${source.source_id})" class="text-purple-600 hover:text-purple-800 mr-2" title="AI Analysis">
+                                    <i class="fas fa-brain"></i>
+                                </button>
+                                <button onclick="app.deleteSource(${source.source_id})" class="text-red-600 hover:text-red-800" title="Delete">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
                         </tr>
-                    </thead>
-                    <tbody>
-                        ${sources.map(source => `
-                            <tr class="border-b hover:bg-gray-50">
-                                <td class="px-4 py-2">${source.file_name || 'Unknown'}</td>
-                                <td class="px-4 py-2">${source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'N/A'}</td>
-                                <td class="px-4 py-2">${source.processed_records || 0}</td>
-                                <td class="px-4 py-2">
-                                    <span class="px-2 py-1 text-xs rounded ${
-                                        source.processing_status === 'Completed' ? 'bg-green-100 text-green-800' :
-                                        source.processing_status === 'Failed' ? 'bg-red-100 text-red-800' :
-                                        'bg-yellow-100 text-yellow-800'
-                                    }">
-                                        ${source.processing_status || 'Unknown'}
-                                    </span>
-                                </td>
-                                <td class="px-4 py-2">
-                                    <div class="flex items-center">
-                                        <div class="w-2 h-2 rounded-full ${
-                                            source.processing_status === 'Completed' ? 'bg-green-400' : 
-                                            source.processing_status === 'Failed' ? 'bg-red-400' : 'bg-yellow-400'
-                                        } mr-2"></div>
-                                        <span class="text-xs">${
-                                            source.processing_status === 'Completed' ? 'Good' : 
-                                            source.processing_status === 'Failed' ? 'Poor' : 'Processing'
-                                        }</span>
-                                    </div>
-                                </td>
-                                <td class="px-4 py-2">
-                                    <button onclick="app.viewSource(${source.source_id})" class="text-blue-600 hover:text-blue-800 mr-2" title="View">
-                                        <i class="fas fa-eye"></i>
-                                    </button>
-                                    <button onclick="app.getSourceAIAnalysis(${source.source_id})" class="text-purple-600 hover:text-purple-800 mr-2" title="AI Analysis">
-                                        <i class="fas fa-brain"></i>
-                                    </button>
-                                    <button onclick="app.deleteSource(${source.source_id})" class="text-red-600 hover:text-red-800" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
-            </div>
-        `;
-        container.innerHTML = table;
-    }
+                    `).join('')}
+                </tbody>
+            </table>
+        </div>
+        ${this.pagination.dataSourcesTable.renderPaginationControls()}
+    `;
+    container.innerHTML = table;
+}
+
+    
 
     // ENHANCED FILE UPLOAD WITH AI INTEGRATION
     async handleFileUpload(file) {
@@ -405,6 +685,7 @@ class AIEnhancedGroundwaterSystem {
                 this.loadDataSources(),
                 this.loadCatchments()
             ]);
+            console.log('Data sources :' ,this.loadDataSources);
             
             // Clear file input
             const fileInput = document.getElementById('fileInput');
@@ -1011,77 +1292,241 @@ class AIEnhancedGroundwaterSystem {
         }
     }
     
-    async loadFailureAnalysis(filters) {
-        try {
-            const params = new URLSearchParams();
-            if (filters.catchment) params.append('catchment', filters.catchment);
-            if (filters.start_date) params.append('start_date', filters.start_date);
-            if (filters.end_date) params.append('end_date', filters.end_date);
-            
-            const response = await this.makeApiRequest(`/failure-analysis?${params}`);
-            const result = await response.json();
-            
-            this.updateFailureAnalysisTable(result.failure_analysis || []);
-        } catch (error) {
-            this.diagnostics.log(`Failure analysis failed: ${error.message}`, 'warning');
+ async loadFailureAnalysis(filters) {
+    try {
+        const params = new URLSearchParams();
+        if (filters.catchment) params.append('catchment', filters.catchment);
+        if (filters.start_date) params.append('start_date', filters.start_date);
+        if (filters.end_date) params.append('end_date', filters.end_date);
+        
+        // Add category filter based on parameter selection
+        if (filters.parameter) {
+            const categoryMap = {
+                'RECHARGE': 'recharge',
+                'GWL': 'gwlevel',
+                'BASEFLOW': 'baseflow'  // ADDED: Baseflow support
+            };
+            const category = categoryMap[filters.parameter];
+            if (category) {
+                params.append('category', category);
+            }
         }
+        
+        const response = await this.makeApiRequest(`/failure-analysis?${params}`);
+        const result = await response.json();
+        
+        // Pass the entire result including summary
+        this.updateFailureAnalysisTable(result);
+    } catch (error) {
+        this.diagnostics.log(`Failure analysis failed: ${error.message}`, 'warning');
     }
+}
     
-    updateFailureAnalysisTable(data) {
-        const container = document.getElementById('failureAnalysisTable');
-        if (!container) return;
-        
-        if (!data || data.length === 0) {
-            container.innerHTML = `
-                <div class="text-center py-8 text-gray-500">
-                    <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
-                    <p>No failure analysis data available</p>
-                </div>
-            `;
-            return;
-        }
-        
-        const table = `
-            <div class="overflow-x-auto">
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-2 text-left">Catchment</th>
-                            <th class="px-4 py-2 text-left">Year</th>
-                            <th class="px-4 py-2 text-left">Month</th>
-                            <th class="px-4 py-2 text-left">Total Records</th>
-                            <th class="px-4 py-2 text-left">Failures</th>
-                            <th class="px-4 py-2 text-left">Failure Rate</th>
-                            <th class="px-4 py-2 text-left">AI Action</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-                        ${data.map(row => {
-                            const totalFailures = (row.gwr_failures || 0) + (row.gwl_failures || 0) + (row.gwb_failures || 0);
-                            const rate = row.total_records > 0 ? ((totalFailures / row.total_records) * 100).toFixed(1) : '0.0';
-                            return `
-                                <tr class="border-b hover:bg-gray-50">
-                                    <td class="px-4 py-2">${row.catchment_name || 'Unknown'}</td>
-                                    <td class="px-4 py-2">${row.year || 'N/A'}</td>
-                                    <td class="px-4 py-2">${row.month || 'N/A'}</td>
-                                    <td class="px-4 py-2">${row.total_records || 0}</td>
-                                    <td class="px-4 py-2">${totalFailures}</td>
-                                    <td class="px-4 py-2">${rate}%</td>
-                                    <td class="px-4 py-2">
-                                        <button onclick="app.aiAssistant.analyzeFailurePeriod('${row.catchment_name}', ${row.year}, ${row.month})" 
-                                                class="text-purple-600 hover:text-purple-800 text-xs">
-                                            <i class="fas fa-brain mr-1"></i>Analyze
-                                        </button>
-                                    </td>
-                                </tr>
-                            `;
-                        }).join('')}
-                    </tbody>
-                </table>
+updateFailureAnalysisTable(result) {
+    const container = document.getElementById('failureAnalysisTable');
+    if (!container) return;
+    
+    const data = result.failure_analysis || result;
+    const summary = result.summary || null;
+    
+    if (!data || data.length === 0) {
+        container.innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                <p>No failure analysis data available</p>
             </div>
         `;
-        container.innerHTML = table;
+        return;
     }
+    
+   // Store the data array for pagination
+  this.pagination.failureAnalysisTable.setData(data);
+  this.pagination.failureAnalysisTable.allData = result;
+    
+    // Set pagination data
+    this.pagination.failureAnalysisTable.setData(data);
+    
+    // Get current page data
+    const pageData = this.pagination.failureAnalysisTable.getCurrentPageData();
+    
+    const table = `
+        <div class="overflow-x-auto">
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-2 text-left">Catchment</th>
+                        <th class="px-4 py-2 text-left">Year</th>
+                        <th class="px-4 py-2 text-left">Month</th>
+                        <th class="px-4 py-2 text-left">Category</th>
+                        <th class="px-4 py-2 text-left">Total Records</th>
+                        <th class="px-4 py-2 text-left">Failures</th>
+                        <th class="px-4 py-2 text-left">Failure Rate</th>
+                        <th class="px-4 py-2 text-left">Severity</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    ${pageData.map(row => {
+                        const rate = row.failure_rate || 0;
+                        const severity = row.avg_failure_severity || 0;
+                        const classification = row.severity_classification || 'None';
+                        
+                        return `
+                            <tr class="border-b hover:bg-gray-50">
+                                <td class="px-4 py-2">${row.catchment_name || 'Unknown'}</td>
+                                <td class="px-4 py-2">${row.year || 'N/A'}</td>
+                                <td class="px-4 py-2">${row.month || 'N/A'}</td>
+                                <td class="px-4 py-2">
+                                    <span class="px-2 py-1 text-xs rounded ${
+                                        row.category === 'BASEFLOW' ? 'bg-blue-100 text-blue-800' :
+                                        row.category === 'RECHARGE' ? 'bg-green-100 text-green-800' :
+                                        'bg-purple-100 text-purple-800'
+                                    }">
+                                        ${row.category || 'N/A'}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2">${row.total_records || 0}</td>
+                                <td class="px-4 py-2">
+                                    <span class="${row.total_failures > 0 ? 'font-bold text-red-600' : 'text-gray-600'}">
+                                        ${row.total_failures || 0}
+                                    </span>
+                                </td>
+                                <td class="px-4 py-2">
+                                    <div class="flex items-center gap-2">
+                                        <span class="px-2 py-1 rounded text-xs font-medium ${
+                                            rate > 50 ? 'bg-red-100 text-red-800' :
+                                            rate > 30 ? 'bg-orange-100 text-orange-800' :
+                                            rate > 15 ? 'bg-yellow-100 text-yellow-800' :
+                                            rate > 0 ? 'bg-blue-100 text-blue-800' :
+                                            'bg-green-100 text-green-800'
+                                        }">
+                                            ${rate.toFixed(1)}%
+                                        </span>
+                                        <span class="text-xs text-gray-500">${classification}</span>
+                                    </div>
+                                </td>
+                                <td class="px-4 py-2">
+                                    <span class="text-xs ${
+                                        severity >= 2 ? 'text-red-600 font-bold' :
+                                        severity >= 1 ? 'text-orange-600' :
+                                        'text-gray-600'
+                                    }">
+                                        ${severity.toFixed(2)}
+                                    </span>
+                                </td>
+                            </tr>
+                        `;
+                    }).join('')}
+                </tbody>
+            </table>
+        </div>
+        ${this.pagination.failureAnalysisTable.renderPaginationControls()}
+        
+        ${summary ? `
+            <div class="mt-4 p-4 bg-gray-50 rounded-lg border border-gray-200">
+                <h4 class="font-medium text-gray-800 mb-3">Summary Statistics</h4>
+                <div class="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                    <div>
+                        <span class="text-gray-600">Total Records:</span>
+                        <span class="font-bold ml-2">${summary.total_records || 0}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Total Failures:</span>
+                        <span class="font-bold ml-2 text-red-600">${summary.total_failures || 0}</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Overall Failure Rate:</span>
+                        <span class="font-bold ml-2">${(summary.overall_failure_rate || 0).toFixed(2)}%</span>
+                    </div>
+                    <div>
+                        <span class="text-gray-600">Periods Analyzed:</span>
+                        <span class="font-bold ml-2">${summary.periods_analyzed || 0}</span>
+                    </div>
+                </div>
+                
+                ${summary.category_breakdown ? `
+                    <div class="mt-3 pt-3 border-t border-gray-300">
+                        <h5 class="text-xs font-medium text-gray-700 mb-2">By Category:</h5>
+                        <div class="grid grid-cols-3 gap-2">
+                            ${Object.entries(summary.category_breakdown).map(([cat, stats]) => `
+                                <div class="bg-white p-2 rounded border border-gray-200">
+                                    <div class="text-xs font-medium text-gray-700">${cat}</div>
+                                    <div class="text-lg font-bold ${
+                                        stats.failure_rate > 30 ? 'text-red-600' :
+                                        stats.failure_rate > 15 ? 'text-orange-600' :
+                                        'text-green-600'
+                                    }">${stats.failure_rate.toFixed(1)}%</div>
+                                    <div class="text-xs text-gray-500">${stats.total_failures}/${stats.total_records} records</div>
+                                </div>
+                            `).join('')}
+                        </div>
+                    </div>
+                ` : ''}
+            </div>
+        ` : ''}
+    `;
+    container.innerHTML = table;
+}
+
+// Add debugging helper for baseflow
+async verifyBaseflowUpload(sourceId) {
+    try {
+        this.showLoading('Verifying baseflow data...');
+        
+        const response = await this.makeApiRequest(`/debug/baseflow-check?source_id=${sourceId}`);
+        const result = await response.json();
+        
+        if (result.data && result.data.length > 0) {
+            const message = `Baseflow verification: ${result.count} records checked, ${result.failures_found} failures found (${result.failure_rate}% failure rate)`;
+            this.showMessage(message, result.failures_found > 0 ? 'warning' : 'success');
+            
+            // Show detailed breakdown
+            console.table(result.data);
+            this.diagnostics.log(`Baseflow check: ${result.failure_rate}% failure rate`, 
+                result.failure_rate > 30 ? 'bad' : result.failure_rate > 15 ? 'warning' : 'good');
+        } else {
+            this.showMessage('No baseflow data found to verify', 'warning');
+        }
+        
+    } catch (error) {
+        this.showMessage(`Verification failed: ${error.message}`, 'error');
+    } finally {
+        this.hideLoading();
+    }
+}
+
+// Add debugging console command
+debugCurrentData() {
+    if (!this.currentData || this.currentData.length === 0) {
+        console.log('No data loaded');
+        return;
+    }
+    
+    console.log('=== DATA DEBUG INFO ===');
+    console.log('Total records:', this.currentData.length);
+    console.log('Sample record:', this.currentData[0]);
+    
+    const failures = this.currentData.filter(d => d.is_failure === 1);
+    console.log('Failures:', failures.length);
+    console.log('Failure rate:', ((failures.length / this.currentData.length) * 100).toFixed(2) + '%');
+    
+    if (failures.length > 0) {
+        console.log('Sample failure:', failures[0]);
+        console.table(failures.slice(0, 5));
+    }
+    
+    // Check z-score distribution
+    const zscores = this.currentData
+        .filter(d => d.zscore !== null && d.zscore !== undefined)
+        .map(d => d.zscore);
+    
+    if (zscores.length > 0) {
+        console.log('Z-score stats:');
+        console.log('  Min:', Math.min(...zscores).toFixed(3));
+        console.log('  Max:', Math.max(...zscores).toFixed(3));
+        console.log('  Avg:', (zscores.reduce((a, b) => a + b, 0) / zscores.length).toFixed(3));
+        console.log('  Below -0.5:', zscores.filter(z => z < -0.5).length);
+    }
+}
     
     initializeCharts() {
         try {
@@ -1354,6 +1799,50 @@ class AIEnhancedGroundwaterSystem {
             this.hideLoading();
         }
     }
+
+
+   
+async verifyBaseflowUpload(sourceId) {
+    try {
+        this.showLoading('Verifying baseflow data...');
+        
+        const response = await this.makeApiRequest(`/debug/baseflow-check?source_id=${sourceId}`);
+        const result = await response.json();
+        
+        if (result.data && result.data.length > 0) {
+            const message = `Baseflow verification: ${result.count} records, ${result.failures_found} failures (${result.failure_rate}%)`;
+            this.showMessage(message, result.failures_found > 0 ? 'warning' : 'success');
+            console.table(result.data);
+            this.diagnostics.log(`Baseflow: ${result.failure_rate}% failure rate`, 
+                result.failure_rate > 30 ? 'bad' : result.failure_rate > 15 ? 'warning' : 'good');
+        } else {
+            this.showMessage('No baseflow data found', 'warning');
+        }
+    } catch (error) {
+        this.showMessage(`Verification failed: ${error.message}`, 'error');
+    } finally {
+        this.hideLoading();
+    }
+}
+
+debugCurrentData() {
+    if (!this.currentData || this.currentData.length === 0) {
+        console.log('No data loaded');
+        return;
+    }
+    
+    console.log('=== DATA DEBUG ===');
+    console.log('Total records:', this.currentData.length);
+    console.log('Sample record:', this.currentData[0]);
+    
+    const failures = this.currentData.filter(d => d.is_failure === 1);
+    console.log('Failures:', failures.length);
+    console.log('Failure rate:', ((failures.length / this.currentData.length) * 100).toFixed(2) + '%');
+    
+    if (failures.length > 0) {
+        console.table(failures.slice(0, 5));
+    }
+}
     
     showLoading(message = 'Loading...') {
         const overlay = document.getElementById('loadingOverlay');
@@ -1575,11 +2064,7 @@ class AdvancedAIAssistant {
     
     startContextUpdates() {
         // Automatically update AI context with current app state
-        this.contextUpdateInterval = setInterval(() => {
-            if (this.isChatActive()) {
-                this.updateAIContext();
-            }
-        }, 600000); // Every 10 minutes
+      console.log('AI context update set to manual');
     }
     
     isChatActive() {
@@ -1587,24 +2072,25 @@ class AdvancedAIAssistant {
         return chatContainer && chatContainer.style.display === 'flex';
     }
     
-    async updateAIContext() {
-        try {
-            const contextData = this.gatherCurrentContext();
-            
-            await fetch(`${this.app.apiBase}/ai/context`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    user_id: this.userId,
-                    context: contextData
-                })
-            });
-            
-            console.log('AI context updated automatically');
-        } catch (error) {
-            console.warn('Failed to update AI context:', error);
-        }
+   async updateAIContext() {
+    // Only update context, don't trigger data refresh
+    try {
+        const contextData = this.gatherCurrentContext();
+        
+        await fetch(`${this.app.apiBase}/ai/context`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                user_id: this.userId,
+                context: contextData
+            })
+        });
+        
+        console.log('AI context updated (manual)');
+    } catch (error) {
+        console.warn('Failed to update AI context:', error);
     }
+}
     
     gatherCurrentContext() {
         return {
@@ -2169,6 +2655,7 @@ class DiagnosticsPanel {
 document.addEventListener('DOMContentLoaded', () => {
     try {
         window.app = new AIEnhancedGroundwaterSystem();
+        window.app.setupPaginationHandlers();
     } catch (error) {
         console.error('Failed to initialize AI-enhanced application:', error);
         document.body.innerHTML += `
