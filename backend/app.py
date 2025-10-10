@@ -2365,6 +2365,248 @@ def get_filter_options():
             'parameters': ['RECHARGE', 'GWL', 'BASEFLOW']
         }), 200
 
+
+@app.route('/api/metrics-calculated', methods=['GET'])
+def get_calculated_metrics():
+    """
+    Calculate performance metrics using the SAME failure detection logic
+    as the data visualization and failure analysis endpoints (standardized approach)
+    """
+    try:
+        catchment_name = request.args.get('catchment')
+        parameter = request.args.get('parameter')
+        
+        # Map parameter to database category
+        parameter_mapping = {
+            'GWL': 'gwlevel',
+            'RECHARGE': 'recharge',
+            'BASEFLOW': 'baseflow'
+        }
+        
+        db_category = None
+        if parameter:
+            db_category = parameter_mapping.get(parameter.upper())
+        
+        # CRITICAL: Use the EXACT SAME query structure as /api/data endpoint
+        # This ensures consistency across the entire system
+        query = """
+        SELECT 
+            c.catchment_name,
+            rd.category,
+            rd.measurement_date,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.standardized_gw_level
+                WHEN rd.category = 'recharge' THEN rd.drought_index_recharge
+                WHEN rd.category = 'baseflow' THEN rd.standardized_baseflow
+                ELSE NULL
+            END as zscore_value,
+            CASE 
+                WHEN rd.category = 'gwlevel' THEN rd.gw_level
+                WHEN rd.category = 'recharge' THEN rd.recharge_converted
+                WHEN rd.category = 'baseflow' THEN rd.baseflow_value
+                ELSE NULL
+            END as original_value,
+            -- CRITICAL: Use the SAME failure detection logic as everywhere else
+            CASE 
+                WHEN rd.category = 'gwlevel' AND rd.standardized_gw_level < -0.5 THEN 1
+                WHEN rd.category = 'recharge' AND rd.drought_index_recharge < -0.5 THEN 1
+                WHEN rd.category = 'baseflow' AND rd.standardized_baseflow < -0.5 THEN 1
+                ELSE 0
+            END as is_failure
+        FROM dbo.RawData rd
+        INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
+        WHERE 1=1
+        """
+        
+        conditions = []
+        params = []
+        
+        if catchment_name and catchment_name.upper() != 'ALL':
+            conditions.append("c.catchment_name = ?")
+            params.append(catchment_name)
+        
+        if db_category:
+            conditions.append("rd.category = ?")
+            params.append(db_category)
+        
+        if conditions:
+            query += " AND " + " AND ".join(conditions)
+        
+        query += " ORDER BY c.catchment_name, rd.category, rd.measurement_date"
+        
+        data = db.execute_query(query, tuple(params) if params else None)
+        
+        if not data or len(data) == 0:
+            return jsonify({
+                'metrics': [],
+                'message': 'No data available for metrics calculation'
+            })
+        
+        # Group data by catchment and category
+        grouped_data = {}
+        for row in data:
+            key = (row['catchment_name'], row['category'])
+            if key not in grouped_data:
+                grouped_data[key] = []
+            grouped_data[key].append(row)
+        
+        # Calculate metrics for each group using the standardized approach
+        calculated_metrics = []
+        for (catchment, category), records in grouped_data.items():
+            metrics = calculate_metrics_standardized(records, catchment, category)
+            if metrics:
+                calculated_metrics.append(metrics)
+        
+        logger.info(f"Calculated metrics for {len(calculated_metrics)} groups using standardized approach")
+        
+        return jsonify({
+            'metrics': calculated_metrics,
+            'calculation_method': 'Shakhane et al. (2024) - Standardized',
+            'count': len(calculated_metrics)
+        })
+        
+    except Exception as e:
+        logger.error(f"Metrics calculation failed: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'error': str(e), 'metrics': []}), 500
+
+
+def calculate_metrics_standardized(records, catchment_name, category):
+    """
+    STANDARDIZED metrics calculation using the same is_failure flag
+    that's used throughout the system (pie charts, failure analysis, etc.)
+    
+    This ensures consistency across all visualizations and calculations.
+    """
+    try:
+        if not records or len(records) == 0:
+            return None
+        
+        # Sort by date
+        records = sorted(records, key=lambda x: x['measurement_date'])
+        
+        # Filter out records with null z-scores
+        valid_records = [r for r in records if r.get('zscore_value') is not None]
+        
+        if not valid_records:
+            logger.warning(f"No valid z-scores for {catchment_name}/{category}")
+            return None
+        
+        total_periods = len(valid_records)
+        
+        # STANDARDIZED: Use the is_failure flag that's already calculated in the query
+        # This is the SAME logic used in pie charts and failure analysis
+        failures = [r for r in valid_records if r['is_failure'] == 1]
+        num_failures = len(failures)
+        
+        # Identify failure sequences (consecutive failure periods)
+        failure_sequences = []
+        current_sequence = []
+        
+        for record in valid_records:
+            if record['is_failure'] == 1:
+                current_sequence.append(record)
+            else:
+                if current_sequence:
+                    failure_sequences.append(current_sequence)
+                    current_sequence = []
+        
+        # Don't forget last sequence
+        if current_sequence:
+            failure_sequences.append(current_sequence)
+        
+        num_sequences = len(failure_sequences)
+        
+        # Calculate failure rate for logging
+        failure_rate = (num_failures / total_periods * 100) if total_periods > 0 else 0
+        
+        logger.info(f"=== STANDARDIZED METRICS: {catchment_name}/{category} ===")
+        logger.info(f"Total periods: {total_periods}")
+        logger.info(f"Failures (is_failure=1): {num_failures} ({failure_rate:.2f}%)")
+        logger.info(f"Failure sequences: {num_sequences}")
+        
+        # 1. RELIABILITY (α) = (T - F) / T
+        # Proportion of time the system performs satisfactorily
+        reliability = (total_periods - num_failures) / total_periods if total_periods > 0 else 0
+        
+        # 2. RESILIENCE (γ) = (1/ρ × Σα(j))^-1
+        # How quickly the system recovers from failures
+        # α(j) = duration of jth failure sequence
+        # ρ = number of failure sequences
+        resilience = 0
+        if num_sequences > 0:
+            # Calculate mean duration of failure sequences
+            sequence_durations = [len(seq) for seq in failure_sequences]
+            mean_duration = sum(sequence_durations) / num_sequences
+            
+            # Resilience is inverse of mean duration
+            resilience = 1.0 / mean_duration if mean_duration > 0 else 0
+            
+            logger.info(f"Sequence durations: {sequence_durations}")
+            logger.info(f"Mean failure duration: {mean_duration:.2f} periods")
+            logger.info(f"Resilience: {resilience:.4f}")
+        else:
+            logger.info("No failure sequences - perfect reliability")
+        
+        # 3. VULNERABILITY (rv) = D̄ᵢ / Dₘₐₓ
+        # Average failure severity relative to maximum severity
+        # Using absolute z-score as deficit magnitude
+        vulnerability = 0
+        avg_deficit = 0
+        max_deficit = 0
+        
+        if failures:
+            # Extract deficit magnitudes (absolute z-scores for failures)
+            deficits = [abs(float(f['zscore_value'])) for f in failures]
+            avg_deficit = sum(deficits) / len(deficits)
+            max_deficit = max(deficits)
+            
+            # Relative vulnerability: average deficit / maximum deficit
+            vulnerability = avg_deficit / max_deficit if max_deficit > 0 else 0
+            
+            logger.info(f"Deficits - Avg: {avg_deficit:.3f}, Max: {max_deficit:.3f}")
+            logger.info(f"Vulnerability: {vulnerability:.4f}")
+        
+        # 4. SUSTAINABILITY (S) = α × γ × (1 - rv)
+        # Combined metric incorporating all three performance indicators
+        sustainability = reliability * resilience * (1 - vulnerability)
+        
+        logger.info(f"FINAL METRICS:")
+        logger.info(f"  Reliability (R): {reliability:.3f}")
+        logger.info(f"  Resilience (γ): {resilience:.3f}")
+        logger.info(f"  Vulnerability (V): {vulnerability:.3f}")
+        logger.info(f"  Sustainability (S): {sustainability:.3f}")
+        logger.info(f"  Formula check: {reliability:.3f} × {resilience:.3f} × {(1-vulnerability):.3f} = {sustainability:.3f}")
+        logger.info("=" * 60)
+        
+        # Map category to display format
+        param_type_map = {
+            'gwlevel': 'GWLevel',
+            'recharge': 'Recharge',
+            'baseflow': 'Baseflow'
+        }
+        
+        return {
+            'catchment_name': catchment_name,
+            'parameter_type': param_type_map.get(category, category),
+            'reliability': round(reliability, 3),
+            'resilience': round(resilience, 3),
+            'vulnerability': round(vulnerability, 3),
+            'sustainability': round(sustainability, 3),
+            'total_periods': total_periods,
+            'failure_count': num_failures,
+            'failure_sequences': num_sequences,
+            'failure_rate': round(failure_rate, 2),
+            'calculation_date': datetime.now().isoformat(),
+            'calculation_method': 'standardized_is_failure_flag'
+        }
+        
+    except Exception as e:
+        logger.error(f"Error calculating metrics for {catchment_name}/{category}: {e}")
+        logger.error(traceback.format_exc())
+        return None
+    
+    
 @app.route('/api/metrics', methods=['GET'])
 def get_performance_metrics():
     try:

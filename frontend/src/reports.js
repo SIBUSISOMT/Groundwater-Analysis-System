@@ -62,7 +62,7 @@
                         this.isFiltered = false;
                         
                         this.updateDisplay();
-                        this.showToast(`Loaded ${this.allData.length} total records from all catchments and parameters`, 'success');
+                        this.showToast(`Loaded ${this.allData.length} total records from all sub-catchments and parameters`, 'success');
                     } catch (error) {
                         this.showToast('Failed to load data', 'error');
                         console.error('Load error:', error);
@@ -187,9 +187,11 @@
             }
             
             updateCharts() {
-                this.updateTimeSeriesChart();
-                this.updateClassificationChart();
-            }
+            this.updateTimeSeriesChart();
+            this.updateClassificationChart();
+            this.updateCatchmentRecordsChart();
+            this.updateFailureTrendsChart();
+        }
             
             updateTimeSeriesChart() {
                 const ctx = document.getElementById('timeSeriesChart');
@@ -230,6 +232,185 @@
                     }
                 });
             }
+
+            updateCatchmentRecordsChart() {
+    const ctx = document.getElementById('catchmentRecordsChart');
+    if (!ctx) return;
+    
+    if (this.charts.catchmentRecords) {
+        this.charts.catchmentRecords.destroy();
+    }
+    
+    const catchmentData = {};
+    this.filteredData.forEach(d => {
+        const catchment = d.catchment_name;
+        if (!catchmentData[catchment]) {
+            catchmentData[catchment] = 0;
+        }
+        catchmentData[catchment]++;
+    });
+    
+    const catchments = Object.keys(catchmentData);
+    const counts = Object.values(catchmentData);
+    
+    this.charts.catchmentRecords = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: catchments,
+            datasets: [{
+                label: 'Total Records',
+                data: counts,
+                backgroundColor: '#3b82f6',
+                borderColor: '#2563eb',
+                borderWidth: 1
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { display: true },
+                title: {
+                    display: true,
+                    text: 'Records per Sub-Catchment'
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    title: { display: true, text: 'Number of Records' }
+                },
+                x: {
+                    title: { display: true, text: 'Sub-Catchment' }
+                }
+            }
+        }
+    });
+}
+
+updateFailureTrendsChart() {
+    const ctx = document.getElementById('failureTrendsChart');
+    if (!ctx) return;
+    
+    if (this.charts.failureTrends) {
+        this.charts.failureTrends.destroy();
+    }
+    
+    // Group by catchment and month/year, calculate failure rate
+    const catchmentTrends = {};
+    
+    this.filteredData.forEach(d => {
+        const catchment = d.catchment_name;
+        if (!catchmentTrends[catchment]) {
+            catchmentTrends[catchment] = {};
+        }
+        
+        if (d.measurement_date) {
+            const date = new Date(d.measurement_date);
+            const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
+            
+            if (!catchmentTrends[catchment][monthYear]) {
+                catchmentTrends[catchment][monthYear] = {
+                    total: 0,
+                    failures: 0,
+                    date: date
+                };
+            }
+            
+            catchmentTrends[catchment][monthYear].total++;
+            if (d.is_failure === 1) {
+                catchmentTrends[catchment][monthYear].failures++;
+            }
+        }
+    });
+    
+    // Convert to datasets
+    const datasets = [];
+    const colors = ['#ef4444', '#f59e0b', '#10b981', '#3b82f6', '#8b5cf6', '#ec4899', '#6366f1', '#14b8a6'];
+    let colorIndex = 0;
+    
+    Object.keys(catchmentTrends).forEach(catchment => {
+        const monthlyData = catchmentTrends[catchment];
+        
+        // Sort by date and calculate failure rates
+        const data = Object.keys(monthlyData)
+            .sort()
+            .map(monthYear => {
+                const stats = monthlyData[monthYear];
+                const failureRate = stats.total > 0 ? (stats.failures / stats.total) * 100 : 0;
+                return {
+                    x: monthYear,
+                    y: failureRate
+                };
+            });
+        
+        if (data.length > 0) {
+            datasets.push({
+                label: catchment,
+                data: data,
+                borderColor: colors[colorIndex % colors.length],
+                backgroundColor: colors[colorIndex % colors.length] + '20',
+                tension: 0.4,
+                pointRadius: 3,
+                pointHoverRadius: 6,
+                fill: false,
+                borderWidth: 2
+            });
+            
+            colorIndex++;
+        }
+    });
+    
+    this.charts.failureTrends = new Chart(ctx, {
+        type: 'line',
+        data: { datasets: datasets },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            plugins: {
+                legend: { 
+                    display: true,
+                    position: 'top'
+                },
+                title: {
+                    display: true,
+                    text: 'Failure Rate Trends by Sub-Catchment (%)'
+                },
+                tooltip: {
+                    callbacks: {
+                        label: function(context) {
+                            return `${context.dataset.label}: ${context.parsed.y.toFixed(1)}%`;
+                        }
+                    }
+                }
+            },
+            scales: {
+                y: {
+                    beginAtZero: true,
+                    max: 100,
+                    title: { display: true, text: 'Failure Rate (%)' },
+                    grid: { color: '#e5e7eb' },
+                    ticks: {
+                        callback: function(value) {
+                            return value + '%';
+                        }
+                    }
+                },
+                x: {
+                    title: { display: true, text: 'Month' },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45
+                    }
+                }
+            },
+            interaction: {
+                mode: 'index',
+                intersect: false
+            }
+        }
+    });
+}
             
             updateClassificationChart() {
                 const ctx = document.getElementById('classificationChart');
@@ -290,7 +471,7 @@
                         <thead class="bg-gray-50 sticky top-0">
                             <tr>
                                 <th class="px-4 py-3 text-left font-semibold">Date</th>
-                                <th class="px-4 py-3 text-left font-semibold">Catchment</th>
+                                <th class="px-4 py-3 text-left font-semibold">Sub-Catchment</th>
                                 <th class="px-4 py-3 text-left font-semibold">Parameter</th>
                                 <th class="px-4 py-3 text-right font-semibold">Original Value</th>
                                 <th class="px-4 py-3 text-right font-semibold">Z-Score</th>
@@ -408,32 +589,154 @@
                 this.showToast('Data refreshed', 'success');
             }
             
-            printReport() {
-                window.print();
-            }
+          printReport() {
+    // Hide all tables except current page data
+    const originalRowsPerPage = this.rowsPerPage;
+    this.rowsPerPage = 'all'; // Show all data
+    this.renderDataTable();
+    
+    // Trigger print
+    setTimeout(() => {
+        window.print();
+        
+        // Restore pagination after print dialog closes
+        setTimeout(() => {
+            this.rowsPerPage = originalRowsPerPage;
+            this.renderDataTable();
+        }, 100);
+    }, 500);
+}
             
-            async exportPDF() {
-                this.showLoading('Generating PDF report...');
+
+ async exportPDF() {
+    console.log('=== PDF Export Started ===');
+    this.showLoading('Preparing PDF report...');
+    
+    try {
+        // Show all data
+        const originalRowsPerPage = this.rowsPerPage;
+        this.rowsPerPage = 'all';
+        this.renderDataTable();
+        
+        // Wait for render
+        await new Promise(resolve => setTimeout(resolve, 2000));
+        
+        // Find container
+        const container = document.querySelector('.container.mx-auto');
+        if (!container) {
+            throw new Error('Could not find content container');
+        }
+        
+        console.log('Converting charts to images...');
+        
+        // Convert all Chart.js canvases to static images
+        const chartCanvases = container.querySelectorAll('canvas');
+        const chartImages = [];
+        
+        chartCanvases.forEach(canvas => {
+            try {
+                // Get the parent container
+                const parent = canvas.parentElement;
                 
-                try {
-                    const element = document.body;
-                    const opt = {
-                        margin: 10,
-                        filename: `groundwater_report_${new Date().toISOString().split('T')[0]}.pdf`,
-                        image: { type: 'jpeg', quality: 0.98 },
-                        html2canvas: { scale: 2, logging: false },
-                        jsPDF: { unit: 'mm', format: 'a4', orientation: 'landscape' }
-                    };
-                    
-                    await html2pdf().set(opt).from(element).save();
-                    this.showToast('PDF exported successfully', 'success');
-                } catch (error) {
-                    this.showToast('PDF export failed', 'error');
-                    console.error('PDF error:', error);
-                } finally {
-                    this.hideLoading();
-                }
+                // Convert canvas to image
+                const img = document.createElement('img');
+                img.src = canvas.toDataURL('image/png');
+                img.style.width = '100%';
+                img.style.maxHeight = '400px';
+                img.className = 'chart-image';
+                
+                // Store reference to restore later
+                chartImages.push({
+                    canvas: canvas,
+                    parent: parent,
+                    img: img
+                });
+                
+                // Replace canvas with image
+                parent.replaceChild(img, canvas);
+            } catch (err) {
+                console.warn('Failed to convert chart:', err);
             }
+        });
+        
+        console.log(`Converted ${chartImages.length} charts to images`);
+        
+        // Wait a bit for images to settle
+        await new Promise(resolve => setTimeout(resolve, 500));
+        
+        // Configure html2pdf
+        const opt = {
+            margin: [10, 10, 10, 10],
+            filename: `groundwater_report_${new Date().toISOString().split('T')[0]}.pdf`,
+            image: { 
+                type: 'jpeg', 
+                quality: 0.95
+            },
+            html2canvas: { 
+                scale: 2,
+                logging: false,
+                useCORS: true,
+                allowTaint: true,
+                backgroundColor: '#ffffff',
+                letterRendering: true
+            },
+            jsPDF: { 
+                unit: 'mm', 
+                format: 'a3',
+                orientation: 'landscape'
+            },
+            pagebreak: {
+                mode: ['avoid-all', 'css', 'legacy']
+            }
+        };
+        
+        this.showLoading('Generating PDF...');
+        console.log('Starting PDF generation...');
+        
+        await html2pdf().set(opt).from(container).save();
+        
+        console.log('PDF generated successfully');
+        
+        // Restore canvases
+        console.log('Restoring charts...');
+        chartImages.forEach(item => {
+            item.parent.replaceChild(item.canvas, item.img);
+        });
+        
+        // Restore pagination
+        this.rowsPerPage = originalRowsPerPage;
+        this.renderDataTable();
+        
+        // Recreate charts since we replaced them
+        this.updateCharts();
+        
+        this.showToast('PDF exported successfully', 'success');
+        
+    } catch (error) {
+        console.error('PDF Error:', error);
+        this.showToast('PDF export failed. Use Print button instead.', 'error');
+        
+        // Restore state
+        if (this.rowsPerPage === 'all') {
+            this.rowsPerPage = 25;
+            this.renderDataTable();
+        }
+        
+        // Offer fallback
+        setTimeout(() => {
+            const usePrint = confirm('PDF export failed. Would you like to use browser Print to PDF instead? (More reliable)');
+            if (usePrint) {
+                this.printReport();
+            }
+        }, 1000);
+    } finally {
+        this.hideLoading();
+        console.log('=== PDF Export Ended ===');
+    }
+}
+
+// Option 2: Browser Print (more reliable fallback)
+// This is your existing printReport() - make sure it's working
             
             async exportExcel() {
                 this.showLoading('Preparing Excel export...');
@@ -516,3 +819,5 @@
         document.addEventListener('DOMContentLoaded', () => {
             reports = new AdvancedGroundwaterReports();
         });
+
+        

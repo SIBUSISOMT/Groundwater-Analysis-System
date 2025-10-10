@@ -6,12 +6,13 @@
     <title>Failure Analysis Dashboard</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
+    
     <style>
         @keyframes slideDown {
             from { opacity: 0; transform: translateY(-20px); }
             to { opacity: 1; transform: translateY(0); }
         }
-        
         @keyframes fadeIn {
             from { opacity: 0; }
             to { opacity: 1; }
@@ -107,6 +108,194 @@
             .no-print { display: none !important; }
             body { background: white; }
         }
+
+        /* Print and PDF Export Styles */
+@media print {
+    /* Hide non-printable elements */
+    .no-print,
+    button,
+    .ai-fab,
+    .ai-chat-container,
+    .diagnostic-panel,
+    #loadingOverlay,
+    #messageContainer,
+    .header-button,
+    #aiInsightsBtn,
+    #refreshBtn,
+    #toggleFiltersBtn,
+    #applyFiltersBtn,
+    #clearFiltersBtn,
+    #exportExcelBtn,
+    #exportPdfBtn,
+    #printBtn,
+    #viewAllBtn,
+    #toggleUploadBtn,
+    .filter-chip i,
+    nav,
+    .sidebar,
+    .enhanced-sidebar {
+        display: none !important;
+    }
+    
+    /* Reset body for print */
+    body {
+        background: white !important;
+        margin: 0;
+        padding: 20px;
+        font-size: 10pt;
+    }
+    
+    /* Main content takes full width */
+    .ml-64 {
+        margin-left: 0 !important;
+    }
+    
+    /* Page breaks */
+    section {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    .stat-card,
+    .bg-white {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    /* Force page break before major sections */
+    #chartsSection,
+    #failureSection,
+    #dataSourcesTable {
+        page-break-before: always;
+    }
+    
+    /* Header styling for print */
+    header {
+        background: white !important;
+        box-shadow: none !important;
+        border-bottom: 2px solid #333;
+        padding: 10px 0 !important;
+        margin-bottom: 20px;
+    }
+    
+    h1, h2, h3 {
+        color: #000 !important;
+        page-break-after: avoid;
+    }
+    
+    /* Summary cards - fit on one line */
+    .grid {
+        display: grid !important;
+        page-break-inside: avoid;
+    }
+    
+    .grid-cols-4 {
+        grid-template-columns: repeat(4, 1fr) !important;
+        gap: 10px !important;
+    }
+    
+    /* Charts - constrain size */
+    .chart-container,
+    canvas {
+        max-height: 250px !important;
+        page-break-inside: avoid;
+    }
+    
+    /* Chart sections - 2 per page */
+    .grid-cols-2 {
+        grid-template-columns: repeat(2, 1fr) !important;
+        gap: 15px !important;
+    }
+    
+    /* Tables */
+    table {
+        width: 100% !important;
+        border-collapse: collapse !important;
+        font-size: 8pt !important;
+        page-break-inside: auto;
+    }
+    
+    thead {
+        display: table-header-group;
+        background: #f3f4f6 !important;
+    }
+    
+    tbody tr {
+        page-break-inside: avoid;
+        break-inside: avoid;
+    }
+    
+    th, td {
+        padding: 4px 6px !important;
+        border: 1px solid #ddd !important;
+    }
+    
+    /* Pagination - hide */
+    #pagination,
+    #paginationContainer {
+        display: none !important;
+    }
+    
+    /* Legends and info boxes */
+    .bg-blue-50,
+    .bg-purple-50,
+    .ai-insights-panel {
+        background: #f8f9fa !important;
+        border: 1px solid #dee2e6 !important;
+        page-break-inside: avoid;
+        margin: 10px 0;
+    }
+    
+    /* Badges and status indicators */
+    .px-2 {
+        font-size: 7pt !important;
+        padding: 2px 4px !important;
+    }
+    
+    /* Summary statistics */
+    .border-t {
+        page-break-before: avoid;
+    }
+    
+    /* Ensure content visibility */
+    * {
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+        color-adjust: exact !important;
+    }
+    
+    /* Footer with page numbers */
+    @page {
+        margin: 1.5cm;
+        @bottom-right {
+            content: "Page " counter(page) " of " counter(pages);
+        }
+    }
+}
+
+/* PDF Export specific (when using html2pdf) */
+.pdf-export-mode {
+    background: white;
+    padding: 20px;
+}
+
+.pdf-export-mode .no-print,
+.pdf-export-mode button,
+.pdf-export-mode nav {
+    display: none !important;
+}
+
+.pdf-export-mode .ml-64 {
+    margin-left: 0 !important;
+}
+
+.pdf-export-mode section {
+    margin-bottom: 30px;
+}
+
+.pdf-export-mode table {
+    font-size: 9pt;
+}
     </style>
 </head>
 <body class="bg-gray-50">
@@ -282,12 +471,17 @@
             </div>
             <div>
                 <label class="block text-sm font-medium text-gray-700 mb-2">Subcatchment</label>
-                <select id="subcatchmentSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Select Subcatchment</option>
-                    <option value="Upper Vaal">Upper Vaal</option>
-                    <option value="Middle Vaal">Middle Vaal</option>
-                    <option value="Lower Vaal">Lower Vaal</option>
-                </select>
+               <select id="subcatchmentSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
+    <option value="">Select Subcatchment</option>
+    <option value="Assegai">Assegai</option>
+    <option value="Crocodile">Crocodile</option>
+    <option value="Lower Komati">Lower Komati</option>
+    <option value="Lower Sabie">Lower Sabie</option>
+    <option value="Ngwempisi">Ngwempisi</option>
+    <option value="Sand">Sand</option>
+    <option value="Upper Komati">Upper Komati</option>
+    <option value="Upper Sabie">Upper Sabie</option>
+</select>
             </div>
             <div class="flex items-end">
                 <div id="dropZone" class="w-full px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all">
@@ -367,51 +561,71 @@
         </div>
 
        
-        <!-- Charts Section -->
-        <!-- <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 mb-8 animate-fade-in">
-            <div class="bg-white rounded-lg shadow-sm border p-6">
-                <h4 class="text-lg font-semibold mb-4 flex items-center">
-                    <i class="fas fa-chart-bar text-blue-600 mr-2"></i>
-                    Failure Rate by Category
-                </h4>
-                <div class="chart-container">
-                    <canvas id="categoryChart"></canvas>
+  <div class="bg-purple-50 border border-purple-200 rounded-lg p-4 mb-4">
+    <div class="flex items-start">
+        <i class="fas fa-info-circle text-purple-600 text-xl mr-3 mt-1"></i>
+        <div class="flex-1">
+            <h5 class="font-semibold text-purple-900 mb-2">Severity Classification Legend (Failure Rate Based)</h5>
+            <p class="text-sm text-purple-800 mb-3">Severity is calculated from the percentage of failed measurements within each time period. Failure Rate = (Total Failures / Total Records) × 100%</p>
+            
+            <div class="grid grid-cols-1 md:grid-cols-5 gap-3">
+                <div class="bg-white rounded-lg p-3 border border-purple-100">
+                    <div class="flex items-center mb-2">
+                        <span class="px-2 py-1 text-xs rounded bg-green-100 text-green-800 font-semibold">None</span>
+                    </div>
+                    <div class="text-xs text-gray-700">
+                        <strong>Failure Rate:</strong> 0%<br>
+                        <strong>Action:</strong> No action needed
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg p-3 border border-purple-100">
+                    <div class="flex items-center mb-2">
+                        <span class="px-2 py-1 text-xs rounded bg-blue-100 text-blue-800 font-semibold">Low</span>
+                    </div>
+                    <div class="text-xs text-gray-700">
+                        <strong>Failure Rate:</strong> 0-15%<br>
+                        <strong>Action:</strong> Monitor trends
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg p-3 border border-purple-100">
+                    <div class="flex items-center mb-2">
+                        <span class="px-2 py-1 text-xs rounded bg-yellow-100 text-yellow-800 font-semibold">Moderate</span>
+                    </div>
+                    <div class="text-xs text-gray-700">
+                        <strong>Failure Rate:</strong> 15-30%<br>
+                        <strong>Action:</strong> Increase monitoring
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg p-3 border border-purple-100">
+                    <div class="flex items-center mb-2">
+                        <span class="px-2 py-1 text-xs rounded bg-orange-100 text-orange-800 font-semibold">High</span>
+                    </div>
+                    <div class="text-xs text-gray-700">
+                        <strong>Failure Rate:</strong> 30-50%<br>
+                        <strong>Action:</strong> Intervention needed
+                    </div>
+                </div>
+                
+                <div class="bg-white rounded-lg p-3 border border-purple-100">
+                    <div class="flex items-center mb-2">
+                        <span class="px-2 py-1 text-xs rounded bg-red-100 text-red-800 font-semibold">Critical</span>
+                    </div>
+                    <div class="text-xs text-gray-700">
+                        <strong>Failure Rate:</strong> > 50%<br>
+                        <strong>Action:</strong> Immediate action
+                    </div>
                 </div>
             </div>
-
-            <div class="bg-white rounded-lg shadow-sm border p-6">
-                <h4 class="text-lg font-semibold mb-4 flex items-center">
-                    <i class="fas fa-chart-line text-green-600 mr-2"></i>
-                    Temporal Failure Trends
-                </h4>
-                <div class="chart-container">
-                    <canvas id="temporalChart"></canvas>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-sm border p-6">
-                <h4 class="text-lg font-semibold mb-4 flex items-center">
-                    <i class="fas fa-map-marker-alt text-purple-600 mr-2"></i>
-                    Catchment Comparison
-                </h4>
-                <div class="chart-container">
-                    <canvas id="catchmentChart"></canvas>
-                </div>
-            </div>
-
-            <div class="bg-white rounded-lg shadow-sm border p-6">
-                <h4 class="text-lg font-semibold mb-4 flex items-center">
-                    <i class="fas fa-exclamation-circle text-red-600 mr-2"></i>
-                    Severity Distribution
-                </h4>
-                <div class="chart-container">
-                    <canvas id="severityChart"></canvas>
-                </div>
-            </div>
-        </div> -->
-
-        <!-- Detailed Failure Analysis Table -->
-    <!-- Detailed Failure Analysis Table -->
+            
+            <p class="text-xs text-purple-700 mt-3">
+                <strong>Note:</strong> Each row represents a time period (month/year). Individual measurements within that period are evaluated using Z-scores.
+            </p>
+        </div>
+    </div>
+</div>
 <div class="bg-white rounded-lg shadow-sm border p-6 animate-fade-in">
     <div class="flex items-center justify-between mb-4">
         <h4 class="text-lg font-semibold flex items-center">

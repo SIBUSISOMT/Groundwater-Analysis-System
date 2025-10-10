@@ -373,7 +373,7 @@ BEGIN
       );
     
     SET @ProcessedCount = @@ROWCOUNT;
-    
+     
     -- Update source status
     UPDATE dbo.DataSources 
     SET processing_status = 'Completed',

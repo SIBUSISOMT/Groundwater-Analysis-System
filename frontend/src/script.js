@@ -248,6 +248,28 @@ setupPaginationHandlers() {
             this.showMessage('System initialization failed', 'error');
         }
     }
+    // Add these methods to your AIEnhancedGroundwaterSystem class in script.js
+
+showMetricsGuide() {
+    const modal = document.getElementById('metricsGuideModal');
+    if (modal) {
+        modal.classList.remove('hidden');
+        document.body.style.overflow = 'hidden'; // Prevent background scrolling
+    }
+}
+
+hideMetricsGuide(event) {
+    // If event is provided, only close if clicking on the backdrop (not the modal content)
+    if (event && event.target.id !== 'metricsGuideModal') {
+        return;
+    }
+    
+    const modal = document.getElementById('metricsGuideModal');
+    if (modal) {
+        modal.classList.add('hidden');
+        document.body.style.overflow = ''; // Restore scrolling
+    }
+}
     
     async testApiConnectivity() {
         for (const endpoint of this.apiEndpoints) {
@@ -1138,64 +1160,7 @@ async loadAndDisplayInitialCharts() {
         }
     }
 
-    displayAIAnalysis(analysis) {
-        const panel = document.getElementById('aiInsightsPanel');
-        const content = document.getElementById('aiInsightsContent');
-        
-        if (!panel || !content) return;
-        
-        panel.classList.remove('hidden');
-        
-        const insights = analysis.insights || [];
-        const recommendations = analysis.recommendations || [];
-        
-        // Calculate basic failure statistics for display
-        const failureCount = this.currentData.filter(d => d.is_failure === 1).length;
-        const failureRate = ((failureCount / this.currentData.length) * 100).toFixed(1);
-        
-        content.innerHTML = `
-            <div class="space-y-4">
-                <div class="ai-insight-item ai-insight-${failureRate > 30 ? 'critical' : failureRate > 15 ? 'warning' : 'info'}">
-                    <h4 class="font-medium">System Performance Analysis</h4>
-                    <p class="text-sm mt-1">Failure rate: ${failureRate}% (${failureCount} of ${this.currentData.length} records)</p>
-                    <p class="text-xs text-gray-600 mt-1">
-                        ${failureRate > 30 ? 'High failure rate indicates significant system stress' :
-                          failureRate > 15 ? 'Moderate failure rate suggests potential issues' :
-                          'Relatively stable system performance'}
-                    </p>
-                </div>
-                
-                ${insights.length > 0 ? `
-                    <div>
-                        <h4 class="font-medium mb-2">AI Insights</h4>
-                        ${insights.map(insight => `
-                            <div class="ai-insight-item ai-insight-${insight.category || 'info'} mb-2">
-                                <p class="text-sm">${insight.message}</p>
-                                <p class="text-xs text-gray-600 mt-1">${insight.recommendation}</p>
-                            </div>
-                        `).join('')}
-                    </div>
-                ` : ''}
-                
-                ${recommendations.length > 0 ? `
-                    <div>
-                        <h4 class="font-medium mb-2">Recommendations</h4>
-                        <ul class="text-sm space-y-1 text-gray-700">
-                            ${recommendations.map(rec => `<li>• ${rec}</li>`).join('')}
-                        </ul>
-                    </div>
-                ` : ''}
-                
-                <div class="text-sm text-gray-600">
-                    <p><i class="fas fa-info-circle mr-2"></i>AI-powered analysis based on your current data. For more insights, chat with the AI assistant.</p>
-                </div>
-                
-                <button onclick="app.aiAssistant.openChat()" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-                    <i class="fas fa-comments mr-1"></i>Ask AI Assistant
-                </button>
-            </div>
-        `;
-    }
+   
 
     showRuleBasedAnalysis() {
         if (!this.currentData || this.currentData.length === 0) return;
@@ -1240,57 +1205,122 @@ async loadAndDisplayInitialCharts() {
         }
     }
 
-    // REST OF EXISTING METHODS (loadMetrics, updateCharts, etc.)
-    async loadMetrics(filters) {
-        try {
-            const params = new URLSearchParams();
-            if (filters.catchment) params.append('catchment', filters.catchment);
-            if (filters.parameter) params.append('parameter', filters.parameter);
-            
-            const response = await this.makeApiRequest(`/metrics?${params}`);
-            const result = await response.json();
-            
-            this.updateMetricsDisplay(result.metrics || []);
-        } catch (error) {
-            this.diagnostics.log(`Metrics loading failed: ${error.message}`, 'warning');
+   async loadMetrics(filters) {
+    try {
+        const params = new URLSearchParams();
+        if (filters.catchment) params.append('catchment', filters.catchment);
+        if (filters.parameter) params.append('parameter', filters.parameter);
+        
+        // CHANGED: Use calculated metrics endpoint
+        const response = await this.makeApiRequest(`/metrics-calculated?${params}`);
+        const result = await response.json();
+        
+        this.diagnostics.log(`Loaded ${result.count || 0} calculated metrics`, 'good');
+        this.updateMetricsDisplay(result.metrics || []);
+        
+    } catch (error) {
+        this.diagnostics.log(`Metrics loading failed: ${error.message}`, 'warning');
+        this.clearMetrics();
+    }
+}
+    
+updateMetricsDisplay(metrics) {
+    console.log('=== METRICS RECEIVED FROM BACKEND ===');
+    console.log('Number of metric groups:', metrics.length);
+    if (metrics.length > 0) {
+        console.log('All metrics:', metrics);
+    }
+    
+    const metricIds = ['reliabilityMetric', 'resilienceMetric', 'vulnerabilityMetric', 'sustainabilityMetric'];
+    
+    if (!metrics || metrics.length === 0) {
+        metricIds.forEach(id => {
+            const el = document.getElementById(id);
+            if (el) el.textContent = '-';
+        });
+        return;
+    }
+    
+    // Filter metrics to match current filters
+    const currentCatchment = document.getElementById('catchmentFilter')?.value;
+    const currentParameter = document.getElementById('parameterFilter')?.value;
+    
+    let filteredMetrics = metrics;
+    
+    // Filter by catchment if selected
+    if (currentCatchment && currentCatchment !== '' && currentCatchment.toUpperCase() !== 'ALL') {
+        filteredMetrics = filteredMetrics.filter(m => 
+            m.catchment_name === currentCatchment
+        );
+    }
+    
+    // Filter by parameter if selected
+    if (currentParameter && currentParameter !== '' && currentParameter.toUpperCase() !== 'ALL') {
+        const paramMap = {
+            'RECHARGE': 'Recharge',
+            'GWL': 'GWLevel',
+            'GWLEVEL': 'GWLevel',
+            'BASEFLOW': 'Baseflow'
+        };
+        const mappedParam = paramMap[currentParameter.toUpperCase()];
+        if (mappedParam) {
+            filteredMetrics = filteredMetrics.filter(m => 
+                m.parameter_type === mappedParam
+            );
         }
     }
     
-    updateMetricsDisplay(metrics) {
-        const metricIds = ['reliabilityMetric', 'resilienceMetric', 'vulnerabilityMetric', 'sustainabilityMetric'];
-        
-        if (!metrics || metrics.length === 0) {
-            metricIds.forEach(id => {
-                const el = document.getElementById(id);
-                if (el) el.textContent = '-';
-            });
-            return;
-        }
-        
-        const avgMetrics = { reliability: 0, resilience: 0, vulnerability: 0, sustainability: 0 };
-        let count = 0;
-        
-        metrics.forEach(metric => {
-            if (metric) {
-                avgMetrics.reliability += metric.reliability || 0;
-                avgMetrics.resilience += metric.resilience || 0;
-                avgMetrics.vulnerability += metric.vulnerability || 0;
-                avgMetrics.sustainability += metric.sustainability || 0;
-                count++;
-            }
-        });
-        
-        if (count > 0) {
-            Object.keys(avgMetrics).forEach(key => {
-                avgMetrics[key] = (avgMetrics[key] / count).toFixed(3);
-            });
-            
-            document.getElementById('reliabilityMetric').textContent = avgMetrics.reliability;
-            document.getElementById('resilienceMetric').textContent = avgMetrics.resilience;
-            document.getElementById('vulnerabilityMetric').textContent = avgMetrics.vulnerability;
-            document.getElementById('sustainabilityMetric').textContent = avgMetrics.sustainability;
-        }
+    console.log('Filtered metrics (matching current view):', filteredMetrics);
+    
+    // If no metrics match current filters, show all as before
+    if (filteredMetrics.length === 0) {
+        filteredMetrics = metrics;
+        console.warn('No metrics match current filters, showing average of all');
     }
+    
+    // Calculate average from filtered metrics only
+    const avgMetrics = {
+        reliability: 0,
+        resilience: 0,
+        vulnerability: 0,
+        sustainability: 0
+    };
+    
+    filteredMetrics.forEach(metric => {
+        avgMetrics.reliability += metric.reliability || 0;
+        avgMetrics.resilience += metric.resilience || 0;
+        avgMetrics.vulnerability += metric.vulnerability || 0;
+        avgMetrics.sustainability += metric.sustainability || 0;
+    });
+    
+    const count = filteredMetrics.length;
+    
+    // Calculate averages and format appropriately
+    const reliability = (avgMetrics.reliability / count);
+    const resilience = (avgMetrics.resilience / count);
+    const vulnerability = (avgMetrics.vulnerability / count);
+    const sustainability = (avgMetrics.sustainability / count);
+    
+    console.log('Displaying metrics (averaged from', count, 'groups):', {
+        reliability: reliability.toFixed(3),
+        resilience: resilience.toFixed(3),
+        vulnerability: vulnerability.toFixed(3),
+        sustainability: sustainability.toFixed(3)
+    });
+    console.table(filteredMetrics);
+    
+    // Update display with percentages for appropriate metrics
+    // Reliability: Show as percentage (0.675 → 67.5%)
+    document.getElementById('reliabilityMetric').textContent = `${(reliability * 100).toFixed(1)}%`;
+    
+    document.getElementById('resilienceMetric').textContent = resilience.toFixed(3);
+
+    document.getElementById('vulnerabilityMetric').textContent = `${(vulnerability * 100).toFixed(1)}%`;
+    
+    document.getElementById('sustainabilityMetric').textContent = sustainability.toFixed(3);
+    
+    console.log('=== END METRICS ===\n');
+}
     
  async loadFailureAnalysis(filters) {
     try {
