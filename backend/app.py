@@ -183,7 +183,6 @@ class DatabaseManager:
         self.execute_query(query, params, fetch=False)
 
 class GroundwaterAnalyzer:
-    """Shakhane et al. methodology implementation"""
     
     @staticmethod
     def calculate_zscore(values: np.array) -> tuple:
@@ -2526,20 +2525,16 @@ def calculate_metrics_standardized(records, catchment_name, category):
         logger.info(f"Failure sequences: {num_sequences}")
         
         # 1. RELIABILITY (α) = (T - F) / T
-        # Proportion of time the system performs satisfactorily
         reliability = (total_periods - num_failures) / total_periods if total_periods > 0 else 0
         
         # 2. RESILIENCE (γ) = (1/ρ × Σα(j))^-1
-        # How quickly the system recovers from failures
-        # α(j) = duration of jth failure sequence
-        # ρ = number of failure sequences
+       
         resilience = 0
         if num_sequences > 0:
-            # Calculate mean duration of failure sequences
+            
             sequence_durations = [len(seq) for seq in failure_sequences]
             mean_duration = sum(sequence_durations) / num_sequences
-            
-            # Resilience is inverse of mean duration
+        
             resilience = 1.0 / mean_duration if mean_duration > 0 else 0
             
             logger.info(f"Sequence durations: {sequence_durations}")
@@ -2549,26 +2544,25 @@ def calculate_metrics_standardized(records, catchment_name, category):
             logger.info("No failure sequences - perfect reliability")
         
         # 3. VULNERABILITY (rv) = D̄ᵢ / Dₘₐₓ
-        # Average failure severity relative to maximum severity
-        # Using absolute z-score as deficit magnitude
+      
         vulnerability = 0
         avg_deficit = 0
         max_deficit = 0
         
         if failures:
-            # Extract deficit magnitudes (absolute z-scores for failures)
+            
             deficits = [abs(float(f['zscore_value'])) for f in failures]
             avg_deficit = sum(deficits) / len(deficits)
             max_deficit = max(deficits)
             
-            # Relative vulnerability: average deficit / maximum deficit
+           
             vulnerability = avg_deficit / max_deficit if max_deficit > 0 else 0
             
             logger.info(f"Deficits - Avg: {avg_deficit:.3f}, Max: {max_deficit:.3f}")
             logger.info(f"Vulnerability: {vulnerability:.4f}")
         
         # 4. SUSTAINABILITY (S) = α × γ × (1 - rv)
-        # Combined metric incorporating all three performance indicators
+       
         sustainability = reliability * resilience * (1 - vulnerability)
         
         logger.info(f"FINAL METRICS:")
@@ -2606,7 +2600,7 @@ def calculate_metrics_standardized(records, catchment_name, category):
         logger.error(traceback.format_exc())
         return None
     
-    
+
 @app.route('/api/metrics', methods=['GET'])
 def get_performance_metrics():
     try:

@@ -283,31 +283,7 @@
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
-    <!-- Diagnostic Panel -->
-    <div id="diagnosticPanel" class="diagnostic-panel">
-        <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px;">
-            <span style="color: #60a5fa; font-weight: bold;">System Status</span>
-            <button id="toggleDiagnostics" style="background: none; border: none; color: #60a5fa; cursor: pointer; font-size: 12px;">Hide</button>
-        </div>
-        <!-- <div id="diagnostics">
-            <div class="loading-dots">Initializing AI-Enhanced System</div>
-        </div> -->
-    </div>
-
-    <!-- Loading Overlay -->
-    <div id="loadingOverlay" class="fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center hidden">
-        <div class="bg-white p-6 rounded-lg shadow-xl">
-            <div class="flex items-center">
-                <div class="animate-spin rounded-full h-8 w-8 border-b-2 border-blue-600 mr-4"></div>
-                <span id="loadingText">Loading...</span>
-            </div>
-        </div>
-    </div>
-
-    
  
-
-  
     <!-- ENHANCED SIDEBAR -->
     <div class="enhanced-sidebar fixed left-0 top-0 h-full w-64 z-30">
         <!-- Animated Header -->
@@ -378,9 +354,6 @@
                             <div id="statusIndicator" class="status-dot w-2.5 h-2.5 bg-gray-400 rounded-full mr-2"></div>
                             <span id="statusText" class="text-xs font-medium text-gray-700">Connecting...</span>
                         </div>
-                        
-                       
-                        
                         <!-- Refresh Button -->
                         <button id="refreshBtn" class="header-button p-2.5 text-gray-600 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all" title="Refresh Data">
                             <i class="fas fa-sync-alt refresh-icon"></i>
@@ -408,11 +381,10 @@
                     </div>
                 </div>
                 <div id="aiInsightsContent">
-                    <p class="text-gray-600">Upload data or apply filters to see AI-powered insights and recommendations.</p>
+                    <p class="text-gray-600">Upload data or apply filters to see  insights and recommendations.</p>
                 </div>
             </section>
 
-            <!-- Upload Section with AI Enhancement -->
            
             <!-- Filters Section -->
             <section id="filtersSection" class="mb-8">
@@ -492,9 +464,9 @@
             </div>
             <div class="text-3xl font-bold text-green-600 mb-2" id="reliabilityMetric">-</div>
             <p class="text-sm text-gray-500">Satisfactory performance probability</p>
-            <button onclick="app.explainMetric('reliability')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
+            <!-- <button onclick="app.explainMetric('reliability')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
                 <i class="fas fa-question-circle"></i> Explain
-            </button>
+            </button> -->
         </div>
 
         <!-- Resilience Card -->
@@ -507,9 +479,9 @@
             </div>
             <div class="text-3xl font-bold text-blue-600 mb-2" id="resilienceMetric">-</div>
             <p class="text-sm text-gray-500">Recovery speed from failures</p>
-            <button onclick="app.explainMetric('resilience')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
+            <!-- <button onclick="app.explainMetric('resilience')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
                 <i class="fas fa-question-circle"></i> Explain
-            </button>
+            </button> -->
         </div>
 
         <!-- Vulnerability Card -->
@@ -522,9 +494,9 @@
             </div>
             <div class="text-3xl font-bold text-orange-600 mb-2" id="vulnerabilityMetric">-</div>
             <p class="text-sm text-gray-500">Average severity of failures</p>
-            <button onclick="app.explainMetric('vulnerability')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
+            <!-- <button onclick="app.explainMetric('vulnerability')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
                 <i class="fas fa-question-circle"></i> Explain
-            </button>
+            </button> -->
         </div>
 
         <!-- Sustainability Card -->
@@ -537,9 +509,9 @@
             </div>
             <div class="text-3xl font-bold text-purple-600 mb-2" id="sustainabilityMetric">-</div>
             <p class="text-sm text-gray-500">Combined performance index</p>
-            <button onclick="app.explainMetric('sustainability')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
+            <!-- <button onclick="app.explainMetric('sustainability')" class="text-blue-600 hover:text-blue-800 text-xs mt-2 flex items-center gap-1">
                 <i class="fas fa-question-circle"></i> Explain
-            </button>
+            </button> -->
         </div>
 
     </div>

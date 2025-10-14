@@ -391,3 +391,5 @@ PRINT '- DataSources date range fields are NVARCHAR for flexibility';
 PRINT '- All date handling is now consistent across tables';
 PRINT '- Stored procedure updated to handle proper DATE types';
 GO
+
+

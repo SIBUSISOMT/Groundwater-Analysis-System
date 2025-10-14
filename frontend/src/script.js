@@ -365,7 +365,7 @@ async loadAndDisplayInitialCharts() {
         switch (status) {
             case 'connected':
                 indicator.className = 'w-3 h-3 bg-green-400 rounded-full mr-2';
-                text.textContent = 'AI System Online';
+                text.textContent = 'System Connected ';
                 break;
             case 'failed':
                 indicator.className = 'w-3 h-3 bg-red-400 rounded-full mr-2';
@@ -1568,91 +1568,278 @@ debugCurrentData() {
         }
     }
     
-    initTimeSeriesChart() {
-        const canvas = document.getElementById('timeSeriesChart');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        
-        if (this.charts.timeSeries) {
-            this.charts.timeSeries.destroy();
-        }
-        
-        this.charts.timeSeries = new Chart(ctx, {
-            type: 'line',
-            data: {
-                labels: [],
-                datasets: [{
-                    label: 'Original Values',
-                    data: [],
-                    borderColor: '#3b82f6',
-                    backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                    tension: 0.4
-                }, {
-                    label: 'Z-scores',
-                    data: [],
-                    borderColor: '#ef4444',
-                    backgroundColor: 'rgba(239, 68, 68, 0.1)',
-                    tension: 0.4,
-                    yAxisID: 'y1'
-                }]
-            },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                scales: {
-                    y: {
-                        type: 'linear',
-                        display: true,
-                        position: 'left',
-                        title: { display: true, text: 'Original Values' }
-                    },
-                    y1: {
-                        type: 'linear',
-                        display: true,
-                        position: 'right',
-                        title: { display: true, text: 'Z-scores' },
-                        grid: { drawOnChartArea: false }
-                    }
-                },
-                plugins: {
-                    title: { display: true, text: 'Time Series Analysis' }
-                }
-            }
-        });
+initTimeSeriesChart() {
+    const canvas = document.getElementById('timeSeriesChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    
+    if (this.charts.timeSeries) {
+        this.charts.timeSeries.destroy();
     }
     
-    initClassificationChart() {
-        const canvas = document.getElementById('classificationChart');
-        if (!canvas) return;
-        
-        const ctx = canvas.getContext('2d');
-        
-        if (this.charts.classification) {
-            this.charts.classification.destroy();
-        }
-        
-        this.charts.classification = new Chart(ctx, {
-            type: 'doughnut',
-            data: {
-                labels: [],
-                datasets: [{
-                    data: [],
-                    backgroundColor: ['#3b82f6', '#22c55e', '#eab308', '#f97316', '#ef4444'],
-                    borderWidth: 2,
-                    borderColor: '#ffffff'
-                }]
+    this.charts.timeSeries = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: [],
+            datasets: [{
+                label: 'Z-scores (System Performance)',
+                data: [],
+                borderColor: '#dc2626',
+                backgroundColor: 'rgba(220, 38, 38, 0.08)',
+                tension: 0.4, // Smooth curves
+                borderWidth: 2.5,
+                pointRadius: 4,
+                pointHoverRadius: 7,
+                pointBackgroundColor: '#dc2626',
+                pointBorderColor: '#ffffff',
+                pointBorderWidth: 2,
+                pointHoverBackgroundColor: '#dc2626',
+                pointHoverBorderColor: '#ffffff',
+                fill: true,
+                spanGaps: true
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            interaction: {
+                mode: 'nearest',
+                intersect: false,
+                axis: 'x'
             },
-            options: {
-                responsive: true,
-                maintainAspectRatio: false,
-                plugins: {
-                    title: { display: true, text: 'Classification Distribution' },
-                    legend: { position: 'bottom' }
+            scales: {
+                y: {
+                    type: 'linear',
+                    display: true,
+                    position: 'left',
+                    title: { 
+                        display: true, 
+                        text: 'System Performance Indicator (Z-score)',
+                        font: { size: 13, weight: '500' },
+                        color: '#4b5563',
+                        padding: { top: 0, bottom: 10 }
+                    },
+                    grid: {
+                        color: function(context) {
+                            if (context.tick.value === 0) {
+                                return '#1f2937'; // Dark line at zero
+                            }
+                            if (context.tick.value === -0.5 || context.tick.value === 0.5) {
+                                return '#fbbf24'; // Yellow lines at thresholds
+                            }
+                            return 'rgba(0, 0, 0, 0.06)';
+                        },
+                        lineWidth: function(context) {
+                            if (context.tick.value === 0) {
+                                return 2.5;
+                            }
+                            if (context.tick.value === -0.5 || context.tick.value === 0.5) {
+                                return 1.5;
+                            }
+                            return 0.5;
+                        },
+                        drawBorder: true,
+                        drawTicks: true
+                    },
+                    ticks: {
+                        stepSize: 0.5,
+                        callback: function(value) {
+                            return value.toFixed(1);
+                        },
+                        color: '#6b7280',
+                        font: {
+                            size: 11
+                        },
+                        padding: 8
+                    },
+                    border: {
+                        display: true,
+                        color: '#d1d5db'
+                    }
+                },
+                x: {
+                    title: {
+                        display: true,
+                        text: 'Time Period',
+                        font: { size: 13, weight: '500' },
+                        color: '#4b5563',
+                        padding: { top: 10, bottom: 0 }
+                    },
+                    ticks: {
+                        maxRotation: 45,
+                        minRotation: 45,
+                        maxTicksLimit: 25,
+                        autoSkip: true,
+                        color: '#6b7280',
+                        font: {
+                            size: 10
+                        }
+                    },
+                    grid: {
+                        display: true,
+                        color: 'rgba(0, 0, 0, 0.04)',
+                        lineWidth: 0.5,
+                        drawBorder: true,
+                        drawTicks: true
+                    },
+                    border: {
+                        display: true,
+                        color: '#d1d5db'
+                    }
+                }
+            },
+            plugins: {
+                title: { 
+                    display: true, 
+                    text: 'Time Series Analysis - Performance Over Time',
+                    font: { size: 15, weight: '500' },
+                    color: '#1f2937',
+                    padding: { top: 10, bottom: 20 }
+                },
+                legend: {
+                    display: true,
+                    position: 'top',
+                    align: 'end',
+                    labels: {
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        padding: 15,
+                        color: '#374151',
+                        font: {
+                            size: 12,
+                            weight: '500'
+                        },
+                        boxWidth: 8,
+                        boxHeight: 8
+                    }
+                },
+                tooltip: {
+                    enabled: true,
+                    mode: 'index',
+                    intersect: false,
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderColor: '#dc2626',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: true,
+                    callbacks: {
+                        title: function(context) {
+                            return 'Date: ' + context[0].label;
+                        },
+                        label: function(context) {
+                            let label = 'Z-score: ' + context.parsed.y.toFixed(3);
+                            
+                            const value = context.parsed.y;
+                            let status = '';
+                            if (value > 0.5) {
+                                status = ' ✓ Surplus';
+                            } else if (value >= -0.5) {
+                                status = ' ✓ Satisfactory';
+                            } else if (value >= -1.0) {
+                                status = ' ⚠ Moderate Deficit';
+                            } else if (value >= -1.5) {
+                                status = ' ⚠ Severe Deficit';
+                            } else {
+                                status = ' ✗ Extreme Deficit';
+                            }
+                            return label + status;
+                        }
+                    }
                 }
             }
-        });
+        }
+    });
+}
+
+// PROFESSIONAL: initClassificationChart - Enhanced professional styling
+initClassificationChart() {
+    const canvas = document.getElementById('classificationChart');
+    if (!canvas) return;
+    
+    const ctx = canvas.getContext('2d');
+    
+    if (this.charts.classification) {
+        this.charts.classification.destroy();
     }
+    
+    this.charts.classification = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+            labels: [],
+            datasets: [{
+                data: [],
+                backgroundColor: [
+                    '#3b82f6',  // Surplus - Blue
+                    '#22c55e',  // Normal - Green
+                    '#eab308',  // Moderate Deficit - Yellow
+                    '#f97316',  // Severe Deficit - Orange
+                    '#ef4444'   // Extreme Deficit - Red
+                ],
+                borderWidth: 3,
+                borderColor: '#ffffff',
+                hoverBorderWidth: 4,
+                hoverBorderColor: '#ffffff',
+                hoverOffset: 8
+            }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '65%',
+            plugins: {
+                title: { 
+                    display: true, 
+                    text: 'Classification Distribution',
+                    font: { size: 15, weight: '500' },
+                    color: '#1f2937',
+                    padding: { top: 10, bottom: 20 }
+                },
+                legend: { 
+                    position: 'bottom',
+                    labels: {
+                        padding: 15,
+                        usePointStyle: true,
+                        pointStyle: 'circle',
+                        font: {
+                            size: 12,
+                            weight: '500'
+                        },
+                        color: '#374151',
+                        boxWidth: 12,
+                        boxHeight: 12
+                    }
+                },
+                tooltip: {
+                    enabled: true,
+                    backgroundColor: 'rgba(0, 0, 0, 0.85)',
+                    titleColor: '#ffffff',
+                    bodyColor: '#ffffff',
+                    borderWidth: 1,
+                    padding: 12,
+                    displayColors: true,
+                    callbacks: {
+                        label: function(context) {
+                            const label = context.label || '';
+                            const value = context.parsed || 0;
+                            const total = context.dataset.data.reduce((a, b) => a + b, 0);
+                            const percentage = total > 0 ? ((value / total) * 100).toFixed(1) : 0;
+                            return `${label}: ${value} records (${percentage}%)`;
+                        }
+                    }
+                }
+            },
+            animation: {
+                animateRotate: true,
+                animateScale: true,
+                duration: 1000,
+                easing: 'easeInOutQuart'
+            }
+        }
+    });
+}
     
     updateCharts() {
         if (!this.currentData || this.currentData.length === 0) {
@@ -1668,57 +1855,137 @@ debugCurrentData() {
         }
     }
     
-    updateTimeSeriesChart() {
-        if (!this.charts.timeSeries || !this.currentData) return;
-        
-        const sortedData = [...this.currentData]
-            .filter(item => item.measurement_date)
-            .sort((a, b) => new Date(a.measurement_date) - new Date(b.measurement_date));
-        
-        const labels = sortedData.map(item => new Date(item.measurement_date).toLocaleDateString());
-        const originalValues = sortedData.map(item => item.original_value);
-        const zScores = sortedData.map(item => item.zscore);
-        
-        this.charts.timeSeries.data.labels = labels;
-        this.charts.timeSeries.data.datasets[0].data = originalValues;
-        this.charts.timeSeries.data.datasets[1].data = zScores;
+updateTimeSeriesChart() {
+    if (!this.charts.timeSeries || !this.currentData) return;
+    
+    // Sort data by date
+    const sortedData = [...this.currentData]
+        .filter(item => item.measurement_date && item.zscore !== null && item.zscore !== undefined)
+        .sort((a, b) => new Date(a.measurement_date) - new Date(b.measurement_date));
+    
+    if (sortedData.length === 0) {
+        console.warn('No valid data with dates and z-scores for time series chart');
+        return;
+    }
+    
+    // Format labels - clean date format
+    const labels = sortedData.map(item => {
+        const date = new Date(item.measurement_date);
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        const year = date.getFullYear();
+        return `${month}/${day}/${year}`;
+    });
+    
+    // Extract Z-scores
+    const zScores = sortedData.map(item => parseFloat(item.zscore));
+    
+    // Calculate dynamic Y-axis range
+    const minZScore = Math.min(...zScores);
+    const maxZScore = Math.max(...zScores);
+    
+    // Add 15% padding on each side for better visibility
+    const padding = Math.max(1.0, (maxZScore - minZScore) * 0.15);
+    const yMin = Math.floor((minZScore - padding) * 2) / 2; // Round to nearest 0.5
+    const yMax = Math.ceil((maxZScore + padding) * 2) / 2;   // Round to nearest 0.5
+    
+    // Ensure minimum range of 4 units (-2 to 2 minimum)
+    const range = yMax - yMin;
+    let finalMin = yMin;
+    let finalMax = yMax;
+    
+    if (range < 4) {
+        const center = (yMin + yMax) / 2;
+        finalMin = center - 2;
+        finalMax = center + 2;
+    }
+    
+    // Update Y-axis with dynamic range
+    this.charts.timeSeries.options.scales.y.min = finalMin;
+    this.charts.timeSeries.options.scales.y.max = finalMax;
+    
+    // Update chart data
+    this.charts.timeSeries.data.labels = labels;
+    this.charts.timeSeries.data.datasets[0].data = zScores;
+    
+    // Force chart update with animation
+    this.charts.timeSeries.update('active');
+    
+    console.log(`Time series chart updated: ${sortedData.length} points, Y-range: [${finalMin.toFixed(1)}, ${finalMax.toFixed(1)}]`);
+}
+
+// FIXED: updateClassificationChart - Enhanced with better data handling
+updateClassificationChart() {
+    if (!this.charts.classification || !this.currentData) return;
+    
+    // Count classifications
+    const counts = {
+        'Surplus': 0,
+        'Normal': 0,
+        'Moderate_Deficit': 0,
+        'Severe_Deficit': 0,
+        'Extreme_Deficit': 0
+    };
+    
+    this.currentData.forEach(item => {
+        const classification = item.classification || 'Normal';
+        if (counts.hasOwnProperty(classification)) {
+            counts[classification]++;
+        }
+    });
+    
+    // Prepare data for chart
+    const labels = Object.keys(counts).map(key => key.replace('_', ' '));
+    const data = Object.values(counts);
+    
+    // Only show non-zero categories
+    const filteredLabels = [];
+    const filteredData = [];
+    const filteredColors = [];
+    
+    const colorMap = {
+        'Surplus': '#3b82f6',
+        'Normal': '#22c55e',
+        'Moderate Deficit': '#eab308',
+        'Severe Deficit': '#f97316',
+        'Extreme Deficit': '#ef4444'
+    };
+    
+    labels.forEach((label, index) => {
+        if (data[index] > 0) {
+            filteredLabels.push(label);
+            filteredData.push(data[index]);
+            filteredColors.push(colorMap[label] || '#94a3b8');
+        }
+    });
+    
+    // Update chart
+    this.charts.classification.data.labels = filteredLabels;
+    this.charts.classification.data.datasets[0].data = filteredData;
+    this.charts.classification.data.datasets[0].backgroundColor = filteredColors;
+    
+    // Force chart update
+    this.charts.classification.update('active');
+    
+    console.log(`Classification chart updated: ${filteredLabels.join(', ')}`);
+}
+
+// FIXED: clearCharts - Clear single dataset
+clearCharts() {
+    if (this.charts.timeSeries) {
+        this.charts.timeSeries.data.labels = [];
+        this.charts.timeSeries.data.datasets[0].data = [];
         this.charts.timeSeries.update();
     }
     
-    updateClassificationChart() {
-        if (!this.charts.classification || !this.currentData) return;
-        
-        const counts = { 'Surplus': 0, 'Normal': 0, 'Moderate_Deficit': 0, 'Severe_Deficit': 0, 'Extreme_Deficit': 0 };
-        
-        this.currentData.forEach(item => {
-            if (counts.hasOwnProperty(item.classification)) {
-                counts[item.classification]++;
-            }
-        });
-        
-        const labels = Object.keys(counts).map(key => key.replace('_', ' '));
-        const data = Object.values(counts);
-        
-        this.charts.classification.data.labels = labels;
-        this.charts.classification.data.datasets[0].data = data;
+    if (this.charts.classification) {
+        this.charts.classification.data.labels = [];
+        this.charts.classification.data.datasets[0].data = [];
         this.charts.classification.update();
     }
     
-    clearCharts() {
-        if (this.charts.timeSeries) {
-            this.charts.timeSeries.data.labels = [];
-            this.charts.timeSeries.data.datasets[0].data = [];
-            this.charts.timeSeries.data.datasets[1].data = [];
-            this.charts.timeSeries.update();
-        }
-        
-        if (this.charts.classification) {
-            this.charts.classification.data.labels = [];
-            this.charts.classification.data.datasets[0].data = [];
-            this.charts.classification.update();
-        }
-    }
-    
+    console.log('Charts cleared');
+} 
     clearFilters() {
         if (this.isLoading) return;
         
