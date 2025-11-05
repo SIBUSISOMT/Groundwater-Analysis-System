@@ -1,4 +1,3 @@
-
 // ADD this new Pagination class before the AIEnhancedGroundwaterSystem class:
 class TablePagination {
     constructor(containerId, rowsPerPage = 15) {
@@ -134,7 +133,7 @@ class TablePagination {
 }
 
 class AIEnhancedGroundwaterSystem {
- constructor() {
+constructor() {
     this.apiEndpoints = [
         'http://localhost:5000/api',
         'http://127.0.0.1:5000/api'
@@ -147,13 +146,22 @@ class AIEnhancedGroundwaterSystem {
     this.diagnostics = new DiagnosticsPanel();
     this.aiAssistant = new AdvancedAIAssistant(this);
     
-    // ADD: Pagination instances
-this.pagination = {
-    dataSourcesTable: new TablePagination('dataSourcesTable', 15),
-    failureAnalysisTable: new TablePagination('failureAnalysisTable', 15)
-};
-
-this.init();
+    // ✅ IMPROVED: Filter state tracking - NO hardcoded default parameter
+    this.currentFilters = {
+        catchment: '',
+        parameter: '',  // ← Empty = load ALL parameters initially
+        start_date: '',
+        end_date: ''
+    };
+    
+    // ✅ NEW: Track available parameters
+    this.availableParameters = ['RECHARGE', 'BASEFLOW', 'GWL'];
+    this.allParametersData = {};  // Store data for each parameter
+    
+    this.pagination = {
+        dataSourcesTable: new TablePagination('dataSourcesTable', 15),
+        failureAnalysisTable: new TablePagination('failureAnalysisTable', 15)
+    };
     
     this.init();
 }
@@ -416,7 +424,7 @@ async loadAndDisplayInitialCharts() {
         if (clearBtn) clearBtn.addEventListener('click', () => this.clearFilters());
         if (exportBtn) exportBtn.addEventListener('click', () => this.exportData());
         if (refreshBtn) refreshBtn.addEventListener('click', () => this.refreshData());
-        if (aiAnalysisBtn) aiAnalysisBtn.addEventListener('click', () => this.getAIAnalysis());
+       
         if (aiInsightsBtn) aiInsightsBtn.addEventListener('click', () => this.toggleAIInsights());
         
         // AI Chat setup
@@ -460,38 +468,158 @@ async loadAndDisplayInitialCharts() {
         }
     }
     
-    async loadInitialData() {
+async loadInitialData() {
+    try {
+        this.diagnostics.log('Loading initial data...', 'info');
+        
+        await Promise.allSettled([
+            this.loadCatchments(),
+            this.loadDataSources()
+        ]);
+        
+        this.initializeCharts();
+        
+        // ✅ IMPROVED: Load ALL parameters initially
         try {
-            this.diagnostics.log('Loading initial data', 'info');
-            await Promise.all([
-                this.loadCatchments(),
-                this.loadDataSources()
-            ]);
-            this.diagnostics.log('Initial data loaded', 'good');
-        } catch (error) {
-            this.diagnostics.log(`Initial data loading failed: ${error.message}`, 'warning');
-        }
-    }
-    
-    async loadCatchments() {
-        try {
-            const response = await this.makeApiRequest('/catchments');
-            const data = await response.json();
+            this.diagnostics.log('Loading data for all parameters...', 'info');
             
-            const select = document.getElementById('catchmentFilter');
-            if (select && data.catchments) {
-                select.innerHTML = '<option value="">All Catchments</option>';
-                data.catchments.forEach(catchment => {
-                    const option = document.createElement('option');
-                    option.value = catchment.catchment_name || '';
-                    option.textContent = `${catchment.catchment_name} (${catchment.total_records || 0} records)`;
-                    select.appendChild(option);
-                });
+            const parameterData = {};
+            let combinedData = [];
+            
+            // Fetch data for each parameter
+            for (const param of this.availableParameters) {
+                try {
+                    const params = new URLSearchParams(`parameter=${param.toLowerCase()}`);
+                    const url = `${this.apiBase}/data?${params}`;
+                    
+                    const response = await fetch(url);
+                    if (response.ok) {
+                        const result = await response.json();
+                        if (result.success && result.data) {
+                            parameterData[param] = result.data;
+                            combinedData = combinedData.concat(result.data);
+                            
+                            this.diagnostics.log(
+                                `✓ Loaded ${result.data.length} records for ${param}`,
+                                'good'
+                            );
+                        }
+                    }
+                } catch (error) {
+                    this.diagnostics.log(
+                        `⚠ Failed to load ${param}: ${error.message}`,
+                        'warning'
+                    );
+                }
             }
-        } catch (error) {
-            this.diagnostics.log(`Failed to load catchments: ${error.message}`, 'warning');
+            
+            // Store all data
+            this.allParametersData = parameterData;
+            this.currentData = combinedData;
+            
+            if (combinedData.length > 0) {
+                // ✅ Reset filters to show all data
+                this.currentFilters = {
+                    catchment: '',
+                    parameter: '',
+                    start_date: '',
+                    end_date: ''
+                };
+                
+                this.updateCharts();
+                await this.loadMetrics({});  // Load overall metrics
+                
+                const totalRecords = combinedData.length;
+                const parameterBreakdown = Object.entries(parameterData)
+                    .map(([param, data]) => `${param}: ${data.length}`)
+                    .join(', ');
+                
+                this.diagnostics.log(
+                    `✓ Loaded ${totalRecords} total records (${parameterBreakdown})`,
+                    'good'
+                );
+                
+                this.showMessage(
+                    `Dashboard ready: ${totalRecords} records loaded (${parameterBreakdown})`,
+                    'success'
+                );
+            } else {
+                this.currentData = [];
+                this.diagnostics.log('⚠ No data available in database', 'warning');
+                this.showMessage('No data available. Please upload data files.', 'info');
+            }
+            
+        } catch (fetchError) {
+            console.error('Data fetch error:', fetchError);
+            this.diagnostics.log(`✗ Failed to load data: ${fetchError.message}`, 'bad');
+            
+            this.currentData = [];
+            this.showMessage(
+                `Could not load data: ${fetchError.message}. You can still upload files.`,
+                'warning'
+            );
         }
+        
+    } catch (error) {
+        this.diagnostics.log(`✗ Initial data loading failed: ${error.message}`, 'bad');
+        console.error('LoadInitialData error:', error);
+        this.showMessage('System initialization error. Please refresh the page.', 'error');
     }
+}
+    
+async loadCatchments() {
+    try {
+        this.diagnostics.log('Loading catchments...', 'info');
+        
+        const response = await this.makeApiRequest('/catchments');
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: Failed to fetch catchments`);
+        }
+        
+        const data = await response.json();
+        
+        // Validate response structure
+        if (!data.success) {
+            throw new Error(data.message || 'API returned error');
+        }
+        
+        const select = document.getElementById('catchmentFilter');
+        if (!select) {
+            this.diagnostics.log('Catchment filter element not found', 'warning');
+            return;
+        }
+        
+        // Populate catchments
+        if (data.catchments && Array.isArray(data.catchments) && data.catchments.length > 0) {
+            select.innerHTML = '<option value="">All Catchments</option>';
+            
+            data.catchments.forEach(catchment => {
+                const option = document.createElement('option');
+                option.value = catchment.catchment_name || '';
+                option.textContent = `${catchment.catchment_name} (${catchment.total_records || 0} records)`;
+                option.dataset.catchmentId = catchment.catchment_id || '';
+                select.appendChild(option);
+            });
+            
+            this.diagnostics.log(`✓ Loaded ${data.catchments.length} catchments`, 'good');
+        } else {
+            this.diagnostics.log('No catchments available or empty response', 'warning');
+            select.innerHTML = '<option value="">No catchments available</option>';
+        }
+        
+    } catch (error) {
+        this.diagnostics.log(`✗ Failed to load catchments: ${error.message}`, 'bad');
+        
+        // Show user-friendly error in dropdown
+        const select = document.getElementById('catchmentFilter');
+        if (select) {
+            select.innerHTML = `<option value="" disabled>Error: ${error.message}</option>`;
+        }
+        
+        this.showMessage('Could not load catchment list', 'error');
+    }
+}
     
     async loadDataSources() {
         try {
@@ -536,16 +664,16 @@ async loadAndDisplayInitialCharts() {
                         <th class="px-4 py-2 text-left">Upload Date</th>
                         <th class="px-4 py-2 text-left">Records</th>
                         <th class="px-4 py-2 text-left">Status</th>
-                        <th class="px-4 py-2 text-left">AI Score</th>
+             
                         <th class="px-4 py-2 text-left">Actions</th>
                     </tr>
                 </thead>
                 <tbody>
                     ${pageData.map(source => `
                         <tr class="border-b hover:bg-gray-50">
-                            <td class="px-4 py-2">${source.file_name || 'Unknown'}</td>
+                            <td class="px-4 py-2">${source.filename || 'Unknown'}</td>
                             <td class="px-4 py-2">${source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'N/A'}</td>
-                            <td class="px-4 py-2">${source.processed_records || 0}</td>
+                            <td class="px-4 py-2">${source.total_records || 0}</td>
                             <td class="px-4 py-2">
                                 <span class="px-2 py-1 text-xs rounded ${
                                     source.processing_status === 'Completed' ? 'bg-green-100 text-green-800' :
@@ -696,11 +824,11 @@ async loadAndDisplayInitialCharts() {
             }
             
             // Auto-generate AI insights after successful upload
-            setTimeout(() => {
-                if (this.currentData && this.currentData.length > 0) {
-                    this.getAIAnalysis();
-                }
-            }, 1500);
+            // setTimeout(() => {
+            //     if (this.currentData && this.currentData.length > 0) {
+            //         this.getAIAnalysis();
+            //     }
+            // }, 1500);
             
             // Refresh data sources and catchments
             await Promise.all([
@@ -756,128 +884,132 @@ async loadAndDisplayInitialCharts() {
     }
 
     // ENHANCED APPLY FILTERS WITH AI INTEGRATION
-    async applyFilters() {
-        if (this.isLoading) return;
+async applyFilters() {
+    if (this.isLoading) return;
+    
+    const catchmentValue = document.getElementById('catchmentFilter')?.value || '';
+    const parameterValue = document.getElementById('parameterFilter')?.value || '';
+    const startDate = document.getElementById('startDateFilter')?.value || '';
+    const endDate = document.getElementById('endDateFilter')?.value || '';
+    
+    const filters = {
+        catchment: catchmentValue,
+        parameter: parameterValue,
+        start_date: startDate,
+        end_date: endDate
+    };
+    
+    this.isLoading = true;
+    this.showLoading('Applying filters...');
+    
+    try {
+        const params = new URLSearchParams();
         
-        const filters = {
-            catchment: document.getElementById('catchmentFilter')?.value || '',
-            parameter: document.getElementById('parameterFilter')?.value || 'RECHARGE',
-            start_date: document.getElementById('startDateFilter')?.value || '',
-            end_date: document.getElementById('endDateFilter')?.value || ''
-        };
-        
-        this.isLoading = true;
-        this.showLoading('Loading data with AI-enhanced analysis...');
-        this.diagnostics.log('Applying filters with AI enhancement', 'info');
-        
-        // Clear previous AI insights
-        const aiPanel = document.getElementById('aiInsightsPanel');
-        if (aiPanel) {
-            aiPanel.classList.add('hidden');
+        if (filters.catchment) {
+            params.append('catchment', filters.catchment);
         }
         
-        try {
-            // Build query parameters
-            const params = new URLSearchParams();
-            Object.entries(filters).forEach(([key, value]) => {
-                if (value) params.append(key, value);
-            });
+        if (filters.parameter) {
+            const paramMap = {
+                'RECHARGE': 'recharge',
+                'GWL': 'gwlevel',
+                'BASEFLOW': 'baseflow'
+            };
+            const mappedParam = paramMap[filters.parameter] || filters.parameter.toLowerCase();
+            params.append('parameter', mappedParam);
+        }
+        
+        if (filters.start_date) {
+            params.append('start_date', filters.start_date);
+        }
+        
+        if (filters.end_date) {
+            params.append('end_date', filters.end_date);
+        }
+        
+        this.currentFilters = filters;
+        
+        const queryString = params.toString();
+        const url = queryString ? `${this.apiBase}/data?${queryString}` : `${this.apiBase}/data`;
+        
+        console.log('📡 Fetching:', url);
+        
+        const response = await fetch(url);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`);
+        }
+        
+        const result = await response.json();
+        
+        if (!result.success) {
+            throw new Error(result.error || 'Failed to load data');
+        }
+        
+        this.currentData = result.data || [];
+        
+        console.log('📊 Loaded', this.currentData.length, 'records');
+        
+        // ✅ FIXED: All sections update together, consistently
+        if (this.currentData.length === 0) {
+            console.log('⚠️ No data matches filters - clearing all sections');
+            this.showMessage('No data found for selected filters', 'info');
             
-            // Fetch data from API
-            const response = await this.makeApiRequest(`/data?${params}`);
-            const result = await response.json();
-            
-            this.currentData = result.data || [];
-            this.diagnostics.log(`Loaded ${this.currentData.length} records`, 'good');
-            
-            // Update charts and metrics
-            this.updateCharts();
-            await Promise.all([
-                this.loadMetrics(filters),
-                this.loadFailureAnalysis(filters)
-            ]);
-            
-            // Calculate failure rate for AI context
-            const failureRate = this.calculateCurrentFailureRate();
-            const failureCount = this.currentData.filter(d => d.is_failure === 1).length;
-            
-            // Enhanced success message with data insights
-            let message = `Loaded ${this.currentData.length} records`;
-            if (this.currentData.length > 0) {
-                message += ` with ${failureRate.toFixed(1)}% failure rate`;
-                
-                // Add context about data quality
-                if (failureRate > 30) {
-                    message += ' (High stress detected)';
-                } else if (failureRate > 15) {
-                    message += ' (Moderate concerns)';
-                } else {
-                    message += ' (Good performance)';
-                }
-            }
-            
-            this.showMessage(message, 'success');
-            
-            // Notify AI about filter application with detailed context
-            if (this.currentData && this.currentData.length > 0) {
-                const dataInsights = this.generateDataInsights();
-                
-                this.aiAssistant.onFiltersApplied({
-                    filters: filters,
-                    resultCount: this.currentData.length,
-                    failureRate: failureRate,
-                    failureCount: failureCount,
-                    dateRange: this.getDataDateRange(),
-                    catchments: this.getUniqueCatchments(),
-                    parameters: this.getUniqueParameters(),
-                    dataInsights: dataInsights,
-                    timestamp: new Date().toISOString()
-                });
-                
-                // Auto-generate AI analysis if significant data is loaded
-                if (this.currentData.length > 10) {
-                    setTimeout(() => {
-                        this.getAIAnalysis();
-                    }, 2000);
-                }
-            } else {
-                // No data found - AI can help explain why
-                setTimeout(() => {
-                    this.aiAssistant.sendMessage(`I applied filters but got no data. Can you help me understand why and suggest what to try next? My filters were: ${JSON.stringify(filters, null, 2)}`);
-                }, 1000);
-            }
-            
-        } catch (error) {
-            this.diagnostics.log(`Filter application failed: ${error.message}`, 'bad');
-            this.showMessage(`Failed to load data: ${error.message}`, 'error');
-            
-            // Clear current data and charts
-            this.currentData = [];
-            this.updateCharts();
+            // Clear ALL sections when no data
+            this.clearCharts();
             this.clearMetrics();
             this.clearFailureAnalysis();
             
-            // AI assistance with filter errors
-            setTimeout(() => {
-                this.aiAssistant.explainError(`Filter application failed: ${error.message}`, {
-                    filters: filters,
-                    timestamp: new Date().toISOString(),
-                    context: 'data_filtering'
-                });
-            }, 1500);
+        } else {
+            console.log('✅ Data found - updating all sections');
             
-        } finally {
-            this.isLoading = false;
-            this.hideLoading();
+            // Update ALL sections with filters applied
+            this.updateCharts();
+            
+            // ✅ CRITICAL: Load metrics WITH the filters applied
+            await this.loadMetrics(filters).catch(error => {
+                console.error('Metrics load failed:', error);
+                this.diagnostics.log(`Metrics error: ${error.message}`, 'bad');
+            });
+            
+            // ✅ CRITICAL: Load failure analysis WITH the filters applied
+            await this.loadFailureAnalysis(filters).catch(error => {
+                console.error('Failure analysis load failed:', error);
+                this.diagnostics.log(`Failure analysis error: ${error.message}`, 'bad');
+            });
+            
+            // Show success with filter summary
+            let filterSummary = `✓ Loaded ${this.currentData.length} records`;
+            if (filters.catchment) filterSummary += ` from ${filters.catchment}`;
+            if (filters.parameter) filterSummary += ` (${filters.parameter})`;
+            else filterSummary += ` (All Parameters)`;
+            
+            this.showMessage(filterSummary, 'success');
+            this.diagnostics.log(filterSummary, 'good');
         }
+        
+    } catch (error) {
+        console.error('❌ Filter error:', error);
+        this.showMessage(`Error applying filters: ${error.message}`, 'error');
+        this.diagnostics.log(`Filter error: ${error.message}`, 'bad');
+        
+        // ✅ FIXED: Clear all sections on error too
+        this.clearCharts();
+        this.clearMetrics();
+        this.clearFailureAnalysis();
+        
+    } finally {
+        this.isLoading = false;
+        this.hideLoading();
     }
-
+}
     // HELPER FUNCTIONS FOR AI INTEGRATION
-    calculateCurrentFailureRate() {
-        if (!this.currentData || this.currentData.length === 0) return 0;
-        const failures = this.currentData.filter(d => d.is_failure === 1).length;
-        return (failures / this.currentData.length) * 100;
-    }
+calculateCurrentFailureRate() {
+    if (!this.currentData || this.currentData.length === 0) return 0;
+    
+    const failureCount = this.currentData.filter(d => d.is_failure === 1).length;
+    return (failureCount / this.currentData.length) * 100;
+}
 
     generateDataInsights() {
         if (!this.currentData || this.currentData.length === 0) return {};
@@ -1118,85 +1250,10 @@ async loadAndDisplayInitialCharts() {
         document.body.appendChild(modal);
     }
 
-    async getAIAnalysis() {
-        if (!this.currentData || this.currentData.length === 0) {
-            this.showMessage('No data available for AI analysis. Please apply filters first.', 'warning');
-            return;
-        }
-        
-        this.showLoading('AI analyzing your data...');
-        
-        try {
-            const filters = {
-                catchment: document.getElementById('catchmentFilter')?.value || '',
-                parameter: document.getElementById('parameterFilter')?.value || 'RECHARGE',
-                start_date: document.getElementById('startDateFilter')?.value || '',
-                end_date: document.getElementById('endDateFilter')?.value || ''
-            };
-            
-            const response = await fetch(`${this.apiBase}/ai/analyze-data`, {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({
-                    data: this.currentData,
-                    filters: filters
-                })
-            });
-            
-            if (response.ok) {
-                const analysis = await response.json();
-                this.displayAIAnalysis(analysis);
-                this.showMessage('AI analysis completed', 'success');
-            } else {
-                throw new Error('AI analysis service unavailable');
-            }
-            
-        } catch (error) {
-            this.diagnostics.log(`AI analysis failed: ${error.message}`, 'warning');
-            this.showRuleBasedAnalysis();
-            this.showMessage('Using rule-based analysis (AI service unavailable)', 'info');
-        } finally {
-            this.hideLoading();
-        }
-    }
 
    
 
-    showRuleBasedAnalysis() {
-        if (!this.currentData || this.currentData.length === 0) return;
-        
-        const failureCount = this.currentData.filter(d => d.is_failure === 1).length;
-        const failureRate = ((failureCount / this.currentData.length) * 100).toFixed(1);
-        
-        const panel = document.getElementById('aiInsightsPanel');
-        const content = document.getElementById('aiInsightsContent');
-        
-        if (!panel || !content) return;
-        
-        panel.classList.remove('hidden');
-        
-        content.innerHTML = `
-            <div class="space-y-4">
-                <div class="ai-insight-item ai-insight-${failureRate > 30 ? 'critical' : failureRate > 15 ? 'warning' : 'info'}">
-                    <h4 class="font-medium">System Performance Analysis</h4>
-                    <p class="text-sm mt-1">Failure rate: ${failureRate}% (${failureCount} of ${this.currentData.length} records)</p>
-                    <p class="text-xs text-gray-600 mt-1">
-                        ${failureRate > 30 ? 'High failure rate indicates significant system stress' :
-                          failureRate > 15 ? 'Moderate failure rate suggests potential issues' :
-                          'Relatively stable system performance'}
-                    </p>
-                </div>
-                
-                <div class="text-sm text-gray-600">
-                    <p><i class="fas fa-info-circle mr-2"></i>Rule-based analysis active. For advanced AI insights, ensure AI service is available.</p>
-                </div>
-                
-                <button onclick="app.aiAssistant.openChat()" class="px-4 py-2 bg-blue-600 text-white rounded text-sm hover:bg-blue-700">
-                    <i class="fas fa-comments mr-1"></i>Ask AI Assistant
-                </button>
-            </div>
-        `;
-    }
+
 
     toggleAIInsights() {
         const panel = document.getElementById('aiInsightsPanel');
@@ -1205,136 +1262,194 @@ async loadAndDisplayInitialCharts() {
         }
     }
 
-   async loadMetrics(filters) {
+async loadMetrics(filters) {
     try {
+        this.diagnostics.log('Loading metrics...', 'info');
+        
+        // ✅ FIXED: Check if there's data to display
+        if (!this.currentData || this.currentData.length === 0) {
+            this.diagnostics.log('No data available - clearing metrics', 'info');
+            this.clearMetrics();  // Blank out metrics like charts
+            return;
+        }
+        
         const params = new URLSearchParams();
         if (filters.catchment) params.append('catchment', filters.catchment);
-        if (filters.parameter) params.append('parameter', filters.parameter);
+        if (filters.parameter) {
+            const paramMap = {
+                'RECHARGE': 'recharge',
+                'GWL': 'gwlevel',
+                'BASEFLOW': 'baseflow'
+            };
+            const mappedParam = paramMap[filters.parameter] || filters.parameter.toLowerCase();
+            params.append('parameter', mappedParam);
+        }
         
-        // CHANGED: Use calculated metrics endpoint
-        const response = await this.makeApiRequest(`/metrics-calculated?${params}`);
+        const response = await this.makeApiRequest(`/metrics?${params}`);
         const result = await response.json();
         
-        this.diagnostics.log(`Loaded ${result.count || 0} calculated metrics`, 'good');
-        this.updateMetricsDisplay(result.metrics || []);
+        console.log('[METRICS]', result);
+        
+        if (!result.success || !result.metrics || result.metrics.length === 0) {
+            this.diagnostics.log('No metrics data available', 'warning');
+            this.clearMetrics();  // ← Clear metrics if no data matches
+            return;
+        }
+        
+        const metrics = result.metrics;
+        
+        // Calculate averages
+        const avgMetrics = {
+            reliability: 0,
+            resilience: 0,
+            vulnerability: 0,
+            sustainability: 0
+        };
+        
+        metrics.forEach(metric => {
+            avgMetrics.reliability += parseFloat(metric.reliability) || 0;
+            avgMetrics.resilience += parseFloat(metric.resilience) || 0;
+            avgMetrics.vulnerability += parseFloat(metric.vulnerability) || 0;
+            avgMetrics.sustainability += parseFloat(metric.sustainability) || 0;
+        });
+        
+        const count = Math.max(metrics.length, 1);
+        
+        const reliability = (avgMetrics.reliability / count);
+        const resilience = (avgMetrics.resilience / count);
+        const vulnerability = (avgMetrics.vulnerability / count);
+        const sustainability = (avgMetrics.sustainability / count);
+        
+        // ✅ IMPROVED: Update metrics only if data exists
+        const reliabilityEl = document.getElementById('reliabilityMetric');
+        if (reliabilityEl) {
+            reliabilityEl.textContent = isNaN(reliability) ? '-' : `${(reliability * 100).toFixed(1)}%`;
+        }
+        
+        const resilienceEl = document.getElementById('resilienceMetric');
+        if (resilienceEl) {
+            resilienceEl.textContent = isNaN(resilience) ? '-' : resilience.toFixed(3);
+        }
+        
+        const vulnerabilityEl = document.getElementById('vulnerabilityMetric');
+        if (vulnerabilityEl) {
+            vulnerabilityEl.textContent = isNaN(vulnerability) ? '-' : `${(vulnerability * 100).toFixed(1)}%`;
+        }
+        
+        const sustainabilityEl = document.getElementById('sustainabilityMetric');
+        if (sustainabilityEl) {
+            sustainabilityEl.textContent = isNaN(sustainability) ? '-' : sustainability.toFixed(3);
+        }
+        
+        this.diagnostics.log('✓ Metrics displayed', 'good');
         
     } catch (error) {
-        this.diagnostics.log(`Metrics loading failed: ${error.message}`, 'warning');
-        this.clearMetrics();
+        this.diagnostics.log(`✗ Metrics display failed: ${error.message}`, 'bad');
+        console.error('Metrics display error:', error);
+        this.clearMetrics();  // ← Clear on error too
     }
 }
     
 updateMetricsDisplay(metrics) {
-    console.log('=== METRICS RECEIVED FROM BACKEND ===');
-    console.log('Number of metric groups:', metrics.length);
-    if (metrics.length > 0) {
-        console.log('All metrics:', metrics);
-    }
-    
-    const metricIds = ['reliabilityMetric', 'resilienceMetric', 'vulnerabilityMetric', 'sustainabilityMetric'];
-    
-    if (!metrics || metrics.length === 0) {
-        metricIds.forEach(id => {
+    try {
+        const metricIds = {
+            'reliabilityMetric': 'reliability',
+            'resilienceMetric': 'resilience',
+            'vulnerabilityMetric': 'vulnerability',
+            'sustainabilityMetric': 'sustainability'
+        };
+        
+        
+        Object.keys(metricIds).forEach(id => {
             const el = document.getElementById(id);
             if (el) el.textContent = '-';
         });
-        return;
-    }
-    
-    // Filter metrics to match current filters
-    const currentCatchment = document.getElementById('catchmentFilter')?.value;
-    const currentParameter = document.getElementById('parameterFilter')?.value;
-    
-    let filteredMetrics = metrics;
-    
-    // Filter by catchment if selected
-    if (currentCatchment && currentCatchment !== '' && currentCatchment.toUpperCase() !== 'ALL') {
-        filteredMetrics = filteredMetrics.filter(m => 
-            m.catchment_name === currentCatchment
-        );
-    }
-    
-    // Filter by parameter if selected
-    if (currentParameter && currentParameter !== '' && currentParameter.toUpperCase() !== 'ALL') {
-        const paramMap = {
-            'RECHARGE': 'Recharge',
-            'GWL': 'GWLevel',
-            'GWLEVEL': 'GWLevel',
-            'BASEFLOW': 'Baseflow'
-        };
-        const mappedParam = paramMap[currentParameter.toUpperCase()];
-        if (mappedParam) {
-            filteredMetrics = filteredMetrics.filter(m => 
-                m.parameter_type === mappedParam
-            );
+        
+     
+        if (!metrics || metrics.length === 0) {
+            this.diagnostics.log('No metrics data available', 'warning');
+            return;
         }
+        
+        // Calculate averages from backend-filtered metrics
+        const avgMetrics = {
+            reliability: 0,
+            resilience: 0,
+            vulnerability: 0,
+            sustainability: 0
+        };
+        
+        metrics.forEach(metric => {
+            if (metric.reliability !== null && metric.reliability !== undefined) {
+                avgMetrics.reliability += parseFloat(metric.reliability) || 0;
+            }
+            if (metric.resilience !== null && metric.resilience !== undefined) {
+                avgMetrics.resilience += parseFloat(metric.resilience) || 0;
+            }
+            if (metric.vulnerability !== null && metric.vulnerability !== undefined) {
+                avgMetrics.vulnerability += parseFloat(metric.vulnerability) || 0;
+            }
+            if (metric.sustainability !== null && metric.sustainability !== undefined) {
+                avgMetrics.sustainability += parseFloat(metric.sustainability) || 0;
+            }
+        });
+        
+        const count = Math.max(metrics.length, 1);
+        
+        // Display metrics with proper formatting
+        const reliability = (avgMetrics.reliability / count);
+        const resilience = (avgMetrics.resilience / count);
+        const vulnerability = (avgMetrics.vulnerability / count);
+        const sustainability = (avgMetrics.sustainability / count);
+        
+        // Update display
+        const reliabilityEl = document.getElementById('reliabilityMetric');
+        if (reliabilityEl) {
+            reliabilityEl.textContent = isNaN(reliability) ? '-' : `${(reliability * 100).toFixed(1)}%`;
+        }
+        
+        const resilienceEl = document.getElementById('resilienceMetric');
+        if (resilienceEl) {
+            resilienceEl.textContent = isNaN(resilience) ? '-' : resilience.toFixed(3);
+        }
+        
+        const vulnerabilityEl = document.getElementById('vulnerabilityMetric');
+        if (vulnerabilityEl) {
+            vulnerabilityEl.textContent = isNaN(vulnerability) ? '-' : `${(vulnerability * 100).toFixed(1)}%`;
+        }
+        
+        const sustainabilityEl = document.getElementById('sustainabilityMetric');
+        if (sustainabilityEl) {
+            sustainabilityEl.textContent = isNaN(sustainability) ? '-' : sustainability.toFixed(3);
+        }
+        
+        this.diagnostics.log('✓ Metrics displayed', 'good');
+        
+    } catch (error) {
+        this.diagnostics.log(`✗ Metrics display failed: ${error.message}`, 'bad');
+        console.error('Metrics display error:', error);
     }
-    
-    console.log('Filtered metrics (matching current view):', filteredMetrics);
-    
-    // If no metrics match current filters, show all as before
-    if (filteredMetrics.length === 0) {
-        filteredMetrics = metrics;
-        console.warn('No metrics match current filters, showing average of all');
-    }
-    
-    // Calculate average from filtered metrics only
-    const avgMetrics = {
-        reliability: 0,
-        resilience: 0,
-        vulnerability: 0,
-        sustainability: 0
-    };
-    
-    filteredMetrics.forEach(metric => {
-        avgMetrics.reliability += metric.reliability || 0;
-        avgMetrics.resilience += metric.resilience || 0;
-        avgMetrics.vulnerability += metric.vulnerability || 0;
-        avgMetrics.sustainability += metric.sustainability || 0;
-    });
-    
-    const count = filteredMetrics.length;
-    
-    // Calculate averages and format appropriately
-    const reliability = (avgMetrics.reliability / count);
-    const resilience = (avgMetrics.resilience / count);
-    const vulnerability = (avgMetrics.vulnerability / count);
-    const sustainability = (avgMetrics.sustainability / count);
-    
-    console.log('Displaying metrics (averaged from', count, 'groups):', {
-        reliability: reliability.toFixed(3),
-        resilience: resilience.toFixed(3),
-        vulnerability: vulnerability.toFixed(3),
-        sustainability: sustainability.toFixed(3)
-    });
-    console.table(filteredMetrics);
-    
-    // Update display with percentages for appropriate metrics
-    // Reliability: Show as percentage (0.675 → 67.5%)
-    document.getElementById('reliabilityMetric').textContent = `${(reliability * 100).toFixed(1)}%`;
-    
-    document.getElementById('resilienceMetric').textContent = resilience.toFixed(3);
-
-    document.getElementById('vulnerabilityMetric').textContent = `${(vulnerability * 100).toFixed(1)}%`;
-    
-    document.getElementById('sustainabilityMetric').textContent = sustainability.toFixed(3);
-    
-    console.log('=== END METRICS ===\n');
 }
-    
- async loadFailureAnalysis(filters) {
+
+async loadFailureAnalysis(filters) {
     try {
+        // ✅ FIXED: Check data first
+        if (!this.currentData || this.currentData.length === 0) {
+            this.diagnostics.log('No data available - clearing failure analysis', 'info');
+            this.clearFailureAnalysis();
+            return;
+        }
+        
         const params = new URLSearchParams();
         if (filters.catchment) params.append('catchment', filters.catchment);
         if (filters.start_date) params.append('start_date', filters.start_date);
         if (filters.end_date) params.append('end_date', filters.end_date);
         
-        // Add category filter based on parameter selection
         if (filters.parameter) {
             const categoryMap = {
                 'RECHARGE': 'recharge',
                 'GWL': 'gwlevel',
-                'BASEFLOW': 'baseflow'  // ADDED: Baseflow support
+                'BASEFLOW': 'baseflow'
             };
             const category = categoryMap[filters.parameter];
             if (category) {
@@ -1345,10 +1460,23 @@ updateMetricsDisplay(metrics) {
         const response = await this.makeApiRequest(`/failure-analysis?${params}`);
         const result = await response.json();
         
-        // Pass the entire result including summary
-        this.updateFailureAnalysisTable(result);
+        // ✅ FIXED: Check if result has data
+        const data = result.failure_analysis || result;
+        
+        if (!data || data.length === 0) {
+            this.diagnostics.log('No failure analysis data available', 'warning');
+            this.clearFailureAnalysis();
+            return;
+        }
+        
+        this.pagination.failureAnalysisTable.setData(data);
+        const pageData = this.pagination.failureAnalysisTable.getCurrentPageData();
+        
+        // ... rest of table rendering code ...
+        
     } catch (error) {
         this.diagnostics.log(`Failure analysis failed: ${error.message}`, 'warning');
+        this.clearFailureAnalysis();  // ← Clear on error
     }
 }
     
@@ -1546,8 +1674,8 @@ debugCurrentData() {
     
     // Check z-score distribution
     const zscores = this.currentData
-        .filter(d => d.zscore !== null && d.zscore !== undefined)
-        .map(d => d.zscore);
+        .filter(d => d.standardized_value !== null && d.standardized_value !== undefined)
+        .map(d => d.standardized_value);
     
     if (zscores.length > 0) {
         console.log('Z-score stats:');
@@ -1589,11 +1717,11 @@ initTimeSeriesChart() {
                 backgroundColor: 'rgba(220, 38, 38, 0.08)',
                 tension: 0.4, // Smooth curves
                 borderWidth: 2.5,
-                pointRadius: 4,
-                pointHoverRadius: 7,
+                pointRadius: 2,
+                pointHoverRadius: 5,
                 pointBackgroundColor: '#dc2626',
                 pointBorderColor: '#ffffff',
-                pointBorderWidth: 2,
+                pointBorderWidth: 1,
                 pointHoverBackgroundColor: '#dc2626',
                 pointHoverBorderColor: '#ffffff',
                 fill: true,
@@ -1616,7 +1744,7 @@ initTimeSeriesChart() {
                     title: { 
                         display: true, 
                         text: 'System Performance Indicator (Z-score)',
-                        font: { size: 13, weight: '500' },
+                        font: { size: 15, weight: '500' },
                         color: '#4b5563',
                         padding: { top: 0, bottom: 10 }
                     },
@@ -1649,7 +1777,7 @@ initTimeSeriesChart() {
                         },
                         color: '#6b7280',
                         font: {
-                            size: 11
+                            size: 13
                         },
                         padding: 8
                     },
@@ -1673,7 +1801,7 @@ initTimeSeriesChart() {
                         autoSkip: true,
                         color: '#6b7280',
                         font: {
-                            size: 10
+                            size: 13
                         }
                     },
                     grid: {
@@ -1804,7 +1932,7 @@ initClassificationChart() {
                         usePointStyle: true,
                         pointStyle: 'circle',
                         font: {
-                            size: 12,
+                            size: 17,
                             weight: '500'
                         },
                         color: '#374151',
@@ -1841,195 +1969,227 @@ initClassificationChart() {
     });
 }
     
-    updateCharts() {
-        if (!this.currentData || this.currentData.length === 0) {
-            this.clearCharts();
-            return;
-        }
-        
-        try {
-            this.updateTimeSeriesChart();
-            this.updateClassificationChart();
-        } catch (error) {
-            this.diagnostics.log(`Chart update failed: ${error.message}`, 'warning');
-        }
-    }
-    
-updateTimeSeriesChart() {
-    if (!this.charts.timeSeries || !this.currentData) return;
-    
-    // Sort data by date
-    const sortedData = [...this.currentData]
-        .filter(item => item.measurement_date && item.zscore !== null && item.zscore !== undefined)
-        .sort((a, b) => new Date(a.measurement_date) - new Date(b.measurement_date));
-    
-    if (sortedData.length === 0) {
-        console.warn('No valid data with dates and z-scores for time series chart');
+updateCharts() {
+    if (!this.currentData || this.currentData.length === 0) {
+        console.warn('❌ No data available for charts');
+        this.clearCharts();
         return;
     }
     
-    // Format labels - clean date format
-    const labels = sortedData.map(item => {
-        const date = new Date(item.measurement_date);
-        const month = String(date.getMonth() + 1).padStart(2, '0');
-        const day = String(date.getDate()).padStart(2, '0');
-        const year = date.getFullYear();
-        return `${month}/${day}/${year}`;
-    });
+    console.log('🔄 Updating charts with', this.currentData.length, 'records');
+    console.log('📊 First data item:', this.currentData[0]);
     
-    // Extract Z-scores
-    const zScores = sortedData.map(item => parseFloat(item.zscore));
-    
-    // Calculate dynamic Y-axis range
-    const minZScore = Math.min(...zScores);
-    const maxZScore = Math.max(...zScores);
-    
-    // Add 15% padding on each side for better visibility
-    const padding = Math.max(1.0, (maxZScore - minZScore) * 0.15);
-    const yMin = Math.floor((minZScore - padding) * 2) / 2; // Round to nearest 0.5
-    const yMax = Math.ceil((maxZScore + padding) * 2) / 2;   // Round to nearest 0.5
-    
-    // Ensure minimum range of 4 units (-2 to 2 minimum)
-    const range = yMax - yMin;
-    let finalMin = yMin;
-    let finalMax = yMax;
-    
-    if (range < 4) {
-        const center = (yMin + yMax) / 2;
-        finalMin = center - 2;
-        finalMax = center + 2;
-    }
-    
-    // Update Y-axis with dynamic range
-    this.charts.timeSeries.options.scales.y.min = finalMin;
-    this.charts.timeSeries.options.scales.y.max = finalMax;
-    
-    // Update chart data
-    this.charts.timeSeries.data.labels = labels;
-    this.charts.timeSeries.data.datasets[0].data = zScores;
-    
-    // Force chart update with animation
-    this.charts.timeSeries.update('active');
-    
-    console.log(`Time series chart updated: ${sortedData.length} points, Y-range: [${finalMin.toFixed(1)}, ${finalMax.toFixed(1)}]`);
+    // DO NOT destroy charts - just update their data
+    // Charts are already initialized, just populate with new data
+    this.populateTimeSeriesChart();
+    this.populateClassificationChart();
 }
 
-// FIXED: updateClassificationChart - Enhanced with better data handling
-updateClassificationChart() {
-    if (!this.charts.classification || !this.currentData) return;
-    
-    // Count classifications
-    const counts = {
-        'Surplus': 0,
-        'Normal': 0,
-        'Moderate_Deficit': 0,
-        'Severe_Deficit': 0,
-        'Extreme_Deficit': 0
-    };
-    
-    this.currentData.forEach(item => {
-        const classification = item.classification || 'Normal';
-        if (counts.hasOwnProperty(classification)) {
-            counts[classification]++;
+destroyCharts() {
+    try {
+        if (this.charts.timeSeries) {
+            this.charts.timeSeries.destroy();
+            this.charts.timeSeries = null;
         }
-    });
-    
-    // Prepare data for chart
-    const labels = Object.keys(counts).map(key => key.replace('_', ' '));
-    const data = Object.values(counts);
-    
-    // Only show non-zero categories
-    const filteredLabels = [];
-    const filteredData = [];
-    const filteredColors = [];
-    
-    const colorMap = {
-        'Surplus': '#3b82f6',
-        'Normal': '#22c55e',
-        'Moderate Deficit': '#eab308',
-        'Severe Deficit': '#f97316',
-        'Extreme Deficit': '#ef4444'
-    };
-    
-    labels.forEach((label, index) => {
-        if (data[index] > 0) {
-            filteredLabels.push(label);
-            filteredData.push(data[index]);
-            filteredColors.push(colorMap[label] || '#94a3b8');
+        if (this.charts.classification) {
+            this.charts.classification.destroy();
+            this.charts.classification = null;
         }
-    });
-    
-    // Update chart
-    this.charts.classification.data.labels = filteredLabels;
-    this.charts.classification.data.datasets[0].data = filteredData;
-    this.charts.classification.data.datasets[0].backgroundColor = filteredColors;
-    
-    // Force chart update
-    this.charts.classification.update('active');
-    
-    console.log(`Classification chart updated: ${filteredLabels.join(', ')}`);
+        console.log('✓ Charts destroyed');
+    } catch (error) {
+        console.warn('⚠ Error destroying charts:', error);
+    }
 }
 
-// FIXED: clearCharts - Clear single dataset
-clearCharts() {
-    if (this.charts.timeSeries) {
-        this.charts.timeSeries.data.labels = [];
-        this.charts.timeSeries.data.datasets[0].data = [];
-        this.charts.timeSeries.update();
-    }
+populateTimeSeriesChart() {
+    if (!this.charts.timeSeries || !this.currentData) return;
     
-    if (this.charts.classification) {
-        this.charts.classification.data.labels = [];
-        this.charts.classification.data.datasets[0].data = [];
-        this.charts.classification.update();
-    }
-    
-    console.log('Charts cleared');
-} 
-    clearFilters() {
-        if (this.isLoading) return;
+    try {
+        console.log('📈 Populating time series chart...');
         
-        const elements = ['catchmentFilter', 'startDateFilter', 'endDateFilter'];
-        elements.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.value = '';
+        const validData = this.currentData.filter(item => {
+            return item.measurement_date && 
+                   item.standardized_value !== null && 
+                   item.standardized_value !== undefined &&
+                   !isNaN(item.standardized_value);
         });
         
+        console.log('✓ Valid data points:', validData.length);
+        
+        if (validData.length === 0) {
+            console.warn('⚠ No valid z-score data for chart');
+            return;
+        }
+        
+        const sorted = validData.sort((a, b) => 
+            new Date(a.measurement_date) - new Date(b.measurement_date)
+        );
+        
+        const labels = sorted.map(d => d.measurement_date);
+        const zscores = sorted.map(d => parseFloat(d.standardized_value) || 0);
+        
+        const minZ = Math.min(...zscores);
+        const maxZ = Math.max(...zscores);
+        const padding = Math.max(1.0, (maxZ - minZ) * 0.15);
+        
+        const yMin = Math.floor((minZ - padding) * 2) / 2;
+        const yMax = Math.ceil((maxZ + padding) * 2) / 2;
+        
+        this.charts.timeSeries.data.labels = labels;
+        this.charts.timeSeries.data.datasets[0].data = zscores;
+        this.charts.timeSeries.options.scales.y.min = yMin;
+        this.charts.timeSeries.options.scales.y.max = yMax;
+        this.charts.timeSeries.update();
+        
+        console.log('✅ Time series chart updated:', sorted.length, 'points');
+    } catch (error) {
+        console.error('❌ Time series chart error:', error);
+    }
+}
+
+populateClassificationChart() {
+    if (!this.charts.classification || !this.currentData) return;
+    
+    try {
+        console.log('🍩 Populating classification chart...');
+        
+        const counts = {
+            'Surplus': 0,
+            'Normal': 0,
+            'Moderate_Deficit': 0,
+            'Severe_Deficit': 0,
+            'Extreme_Deficit': 0
+        };
+        
+        this.currentData.forEach(item => {
+            const cls = item.classification || 'Normal';
+            if (cls in counts) {
+                counts[cls]++;
+            }
+        });
+        
+        const labels = [];
+        const data = [];
+        const colors = [];
+        const colorMap = {
+            'Surplus': '#3b82f6',
+            'Normal': '#22c55e',
+            'Moderate_Deficit': '#eab308',
+            'Severe_Deficit': '#f97316',
+            'Extreme_Deficit': '#ef4444'
+        };
+        
+        Object.entries(counts).forEach(([key, val]) => {
+            if (val > 0) {
+                labels.push(key.replace(/_/g, ' '));
+                data.push(val);
+                colors.push(colorMap[key]);
+            }
+        });
+        
+        this.charts.classification.data.labels = labels;
+        this.charts.classification.data.datasets[0].data = data;
+        this.charts.classification.data.datasets[0].backgroundColor = colors;
+        this.charts.classification.update();
+        
+        console.log('✅ Classification chart updated:', labels.length, 'categories');
+    } catch (error) {
+        console.error('❌ Classification chart error:', error);
+    }
+}
+
+clearCharts() {
+    try {
+        console.log('🗑️ Clearing charts...');
+        if (this.charts.timeSeries) {
+            this.charts.timeSeries.data.labels = [];
+            this.charts.timeSeries.data.datasets[0].data = [];
+            this.charts.timeSeries.update();
+        }
+        
+        if (this.charts.classification) {
+            this.charts.classification.data.labels = [];
+            this.charts.classification.data.datasets[0].data = [];
+            this.charts.classification.update();
+        }
+        console.log('✓ Charts cleared');
+    } catch (error) {
+        console.warn('⚠ Error clearing charts:', error);
+    }
+}
+
+
+async clearFilters() {
+    if (this.isLoading) return;
+    
+    try {
+        const catchmentFilter = document.getElementById('catchmentFilter');
         const paramFilter = document.getElementById('parameterFilter');
-        if (paramFilter) paramFilter.value = 'RECHARGE';
+        const startDateFilter = document.getElementById('startDateFilter');
+        const endDateFilter = document.getElementById('endDateFilter');
         
-        this.currentData = null;
-        this.clearCharts();
-        this.clearMetrics();
-        this.clearFailureAnalysis();
+        if (catchmentFilter) catchmentFilter.value = '';
+        if (paramFilter) paramFilter.value = '';  // ← Empty = all parameters
+        if (startDateFilter) startDateFilter.value = '';
+        if (endDateFilter) endDateFilter.value = '';
         
-        // Hide AI insights
+        // ✅ IMPROVED: Reset to show all parameters
+        this.currentFilters = {
+            catchment: '',
+            parameter: '',  // Empty = show all parameters
+            start_date: '',
+            end_date: ''
+        };
+        
+        this.isLoading = true;
+        this.showLoading('Resetting to default view...');
+        
+        await this.loadInitialData();  // Reload all data
+        
         const aiPanel = document.getElementById('aiInsightsPanel');
         if (aiPanel) aiPanel.classList.add('hidden');
         
-        this.showMessage('Filters cleared', 'info');
-        this.diagnostics.log('Filters cleared', 'info');
+        this.showMessage('Filters reset - showing all parameters and catchments', 'success');
+        this.diagnostics.log('Filters cleared - showing all data', 'good');
+        
+    } catch (error) {
+        this.showMessage(`Error clearing filters: ${error.message}`, 'error');
+        this.diagnostics.log(`Filter reset failed: ${error.message}`, 'bad');
+    } finally {
+        this.isLoading = false;
+        this.hideLoading();
     }
+}
     
-    clearMetrics() {
-        const metricIds = ['reliabilityMetric', 'resilienceMetric', 'vulnerabilityMetric', 'sustainabilityMetric'];
-        metricIds.forEach(id => {
-            const el = document.getElementById(id);
-            if (el) el.textContent = '-';
-        });
-    }
+clearMetrics() {
+    // ✅ IMPROVED: Blank out metrics like charts
+    const metricIds = ['reliabilityMetric', 'resilienceMetric', 'vulnerabilityMetric', 'sustainabilityMetric'];
     
-    clearFailureAnalysis() {
-        const container = document.getElementById('failureAnalysisTable');
-        if (container) {
-            container.innerHTML = `
-                <div class="text-center py-8 text-gray-500">
-                    <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
-                    <p>No failure analysis data available</p>
-                </div>
-            `;
+    metricIds.forEach(id => {
+        const el = document.getElementById(id);
+        if (el) {
+            el.textContent = '-';  
+            el.style.opacity = '0.5'; 
         }
+    });
+    
+    console.log('🗑️ Metrics cleared');
+}
+    
+clearFailureAnalysis() {
+    const container = document.getElementById('failureAnalysisTable');
+    if (container) {
+        container.innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                <p>No failure analysis data available</p>
+                <p class="text-sm text-gray-400">Apply filters or adjust your selection to see data</p>
+            </div>
+        `;
     }
+    
+    console.log('🗑️ Failure analysis cleared');
+}
     
     async refreshData() {
         if (this.isLoading) return;
@@ -2948,7 +3108,6 @@ class DiagnosticsPanel {
     }
 }
 
-// INITIALIZE THE APPLICATION
 document.addEventListener('DOMContentLoaded', () => {
     try {
         window.app = new AIEnhancedGroundwaterSystem();
@@ -2963,7 +3122,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 });
 
-// Global error handling
 window.addEventListener('error', (event) => {
     console.error('JavaScript Error:', event.error);
 });
@@ -2972,3 +3130,5 @@ window.addEventListener('unhandledrejection', (event) => {
     console.error('Unhandled Promise Rejection:', event.reason);
     event.preventDefault();
 });
+
+

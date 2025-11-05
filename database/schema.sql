@@ -1,206 +1,225 @@
--- Fixed Groundwater Analysis System Database Schema
--- Proper date handling for Excel data compatibility
+-- ============================================================================
+-- COMPLETE GROUNDWATER ANALYSIS DATABASE SETUP SCRIPT - UPDATED
+-- ============================================================================
+-- Creates database from scratch and adds all tables, constraints, and views
+-- for the groundwater analysis system with deviation column support
+-- ✅ INCLUDES subcatchment_name field in DataSources table
+--
+-- Usage: 
+-- 1. Connect to SQL Server (Master database)
+-- 2. Run entire script
+-- ============================================================================
 
-USE master;
+-- ============================================================================
+-- STEP 1: CREATE DATABASE
+-- ============================================================================
+
+-- Drop database if exists (optional - comment out to preserve existing data)
+IF EXISTS (SELECT * FROM sys.databases WHERE name = 'GroundwaterAnalysis')
+BEGIN
+    ALTER DATABASE GroundwaterAnalysis SET SINGLE_USER WITH ROLLBACK IMMEDIATE;
+    DROP DATABASE GroundwaterAnalysis;
+    PRINT 'Dropped existing GroundwaterAnalysis database';
+END
 GO
 
--- Create database if it doesn't exist
-IF NOT EXISTS (SELECT name FROM sys.databases WHERE name = 'GroundwaterAnalysis')
-BEGIN
-    CREATE DATABASE GroundwaterAnalysis;
-END
+-- Create the database
+CREATE DATABASE GroundwaterAnalysis;
+PRINT 'Created GroundwaterAnalysis database';
 GO
 
 USE GroundwaterAnalysis;
 GO
 
--- Drop tables if they exist (for fresh setup)
-IF OBJECT_ID('dbo.PerformanceMetrics', 'U') IS NOT NULL DROP TABLE dbo.PerformanceMetrics;
-IF OBJECT_ID('dbo.ProcessedData', 'U') IS NOT NULL DROP TABLE dbo.ProcessedData;
-IF OBJECT_ID('dbo.RawData', 'U') IS NOT NULL DROP TABLE dbo.RawData;
-IF OBJECT_ID('dbo.Catchments', 'U') IS NOT NULL DROP TABLE dbo.Catchments;
-IF OBJECT_ID('dbo.DataSources', 'U') IS NOT NULL DROP TABLE dbo.DataSources;
+-- ============================================================================
+-- STEP 2: CREATE TABLES
+-- ============================================================================
+
+-- Table: Catchments
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'Catchments')
+BEGIN
+    CREATE TABLE dbo.Catchments (
+        catchment_id INT PRIMARY KEY IDENTITY(1,1),
+        catchment_name NVARCHAR(255) NOT NULL UNIQUE,
+        parent_catchment NVARCHAR(255),
+        description NVARCHAR(MAX),
+        location NVARCHAR(255),
+        area_sqkm FLOAT,
+        created_at DATETIME DEFAULT GETDATE(),
+        updated_at DATETIME DEFAULT GETDATE()
+    );
+    PRINT 'Created Catchments table';
+END
 GO
 
--- 1. Data Sources Table - Track uploaded Excel files
-CREATE TABLE dbo.DataSources (
-    source_id INT IDENTITY(1,1) PRIMARY KEY,
-    file_name NVARCHAR(255) NOT NULL,
-    category NVARCHAR(20) CHECK (category IN ('Recharge', 'Baseflow', 'GWLevel')) NOT NULL,
-    subcatchment NVARCHAR(100) NOT NULL,
-    upload_date DATETIME2 DEFAULT GETDATE(),
-    file_size_kb INT,
-    total_records INT,
-    date_range_start NVARCHAR(10), -- Changed to NVARCHAR to store 'YYYY-MM-DD' format
-    date_range_end NVARCHAR(10),   -- Changed to NVARCHAR to store 'YYYY-MM-DD' format
-    processing_status NVARCHAR(50) DEFAULT 'Pending',
-    error_message NVARCHAR(MAX),
-    created_at DATETIME2 DEFAULT GETDATE(),
-    updated_at DATETIME2 DEFAULT GETDATE()
-);
+-- Table: DataSources (✅ UPDATED - includes subcatchment_name)
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'DataSources')
+BEGIN
+    CREATE TABLE dbo.DataSources (
+        source_id INT PRIMARY KEY IDENTITY(1,1),
+        file_name NVARCHAR(255) NOT NULL,
+        category NVARCHAR(50) NOT NULL,
+        subcatchment_name NVARCHAR(255),           -- ✅ NEW FIELD
+        upload_date DATETIME DEFAULT GETDATE(),
+        processing_status NVARCHAR(50) DEFAULT 'Pending',
+        error_message NVARCHAR(MAX), 
+        records_processed INT DEFAULT 0,
+        date_range_start DATE,
+        date_range_end DATE,
+        updated_at DATETIME DEFAULT GETDATE()
+    );
+    PRINT 'Created DataSources table with subcatchment_name field';
+END
 GO
 
--- 2. Catchments Table - Master list of subcatchments
-CREATE TABLE dbo.Catchments (
-    catchment_id INT IDENTITY(1,1) PRIMARY KEY,
-    catchment_name NVARCHAR(100) NOT NULL UNIQUE,
-    parent_catchment NVARCHAR(100),
-    catchment_code NVARCHAR(20),
-    area_km2 DECIMAL(10,2),
-    description NVARCHAR(500),
-    created_at DATETIME2 DEFAULT GETDATE()
-);
+-- Table: RawData
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'RawData')
+BEGIN
+    CREATE TABLE dbo.RawData (
+        raw_id INT PRIMARY KEY IDENTITY(1,1),
+        source_id INT NOT NULL,
+        catchment_id INT NOT NULL,
+        measurement_date DATE NOT NULL,
+        category NVARCHAR(50) NOT NULL,
+        original_sheet_name NVARCHAR(255),
+        
+        -- Recharge columns
+        recharge_inches FLOAT,
+        recharge_converted FLOAT,
+        average_recharge FLOAT,
+        recharge_stdev FLOAT,
+        drought_index_recharge FLOAT,
+        recharge_deviation FLOAT,
+        
+        -- Baseflow columns
+        baseflow_value FLOAT,
+        average_baseflow FLOAT,
+        baseflow_stdev FLOAT,
+        standardized_baseflow FLOAT,
+        baseflow_deviation FLOAT,
+        
+        -- GW Level columns
+        gw_level FLOAT,
+        average_gw_level FLOAT,
+        gw_level_stdev FLOAT,
+        standardized_gw_level FLOAT,
+        gw_level_deviation FLOAT,
+        
+        created_at DATETIME DEFAULT GETDATE(),
+        FOREIGN KEY (source_id) REFERENCES dbo.DataSources(source_id),
+        FOREIGN KEY (catchment_id) REFERENCES dbo.Catchments(catchment_id)
+    );
+    PRINT 'Created RawData table';
+END
 GO
 
--- Insert subcatchments based on Excel sheet names
-INSERT INTO dbo.Catchments (catchment_name, parent_catchment, catchment_code, description) VALUES
-('Lower Sabie', 'Sabie', 'LSAB', 'Lower Sabie subcatchment'),
-('Upper Sabie', 'Sabie', 'USAB', 'Upper Sabie subcatchment'),
-('Lower Komati', 'Komati', 'LKOM', 'Lower Komati subcatchment'),
-('Upper Komati', 'Komati', 'UKOM', 'Upper Komati subcatchment'),
-('Ngwempisi', 'Usuthu', 'NGW', 'Ngwempisi subcatchment'),
-('Assegai', 'Usuthu', 'ASS', 'Assegai subcatchment'),
-('Sand', 'Sabie-Sand', 'SAND', 'Sand subcatchment'),
-('Crocodile', 'Crocodile', 'CRC', 'Crocodile catchment');
+-- Table: ProcessedData
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'ProcessedData')
+BEGIN
+    CREATE TABLE dbo.ProcessedData (
+        processed_id INT PRIMARY KEY IDENTITY(1,1),
+        raw_id INT NOT NULL,
+        source_id INT NOT NULL,
+        catchment_id INT NOT NULL,
+        measurement_date DATE NOT NULL,
+        parameter_type NVARCHAR(50) NOT NULL,
+        original_value FLOAT,
+        mean_value FLOAT,
+        std_deviation FLOAT,
+        standardized_value FLOAT,
+        parameter_deviation FLOAT,
+        drought_index FLOAT,
+        classification NVARCHAR(50),
+        is_failure BIT DEFAULT 0,
+        severity_level INT,
+        created_at DATETIME DEFAULT GETDATE(),
+        FOREIGN KEY (raw_id) REFERENCES dbo.RawData(raw_id),
+        FOREIGN KEY (source_id) REFERENCES dbo.DataSources(source_id),
+        FOREIGN KEY (catchment_id) REFERENCES dbo.Catchments(catchment_id)
+    );
+    PRINT 'Created ProcessedData table';
+END
 GO
 
--- 3. Raw Data Table - FIXED DATE HANDLING
-CREATE TABLE dbo.RawData (
-    raw_id BIGINT IDENTITY(1,1) PRIMARY KEY,
-    source_id INT FOREIGN KEY REFERENCES dbo.DataSources(source_id),
-    catchment_id INT FOREIGN KEY REFERENCES dbo.Catchments(catchment_id),
-    measurement_date DATE NOT NULL,  -- CHANGED: Now using proper DATE type
-    category NVARCHAR(20) NOT NULL,
-    
-    -- RECHARGE DATA COLUMNS
-    recharge_inches DECIMAL(12,6),
-    recharge_converted DECIMAL(12,6),
-    average_recharge DECIMAL(12,6),
-    recharge_stdev DECIMAL(12,6),
-    drought_index_recharge DECIMAL(12,6),
-    
-    -- BASEFLOW DATA COLUMNS
-    baseflow_value DECIMAL(15,8),
-    average_baseflow DECIMAL(15,8),
-    baseflow_stdev DECIMAL(15,8),
-    standardized_baseflow DECIMAL(12,6),
-    
-    -- GROUNDWATER LEVEL COLUMNS
-    gw_level DECIMAL(12,6),
-    average_gw_level DECIMAL(12,6),
-    gw_level_stdev DECIMAL(12,6),
-    standardized_gw_level DECIMAL(12,6),
-    
-    -- Metadata
-    row_number INT,
-    original_sheet_name NVARCHAR(100),
-    data_quality NVARCHAR(20) DEFAULT 'Good',
-    quality_notes NVARCHAR(500),
-    created_at DATETIME2 DEFAULT GETDATE(),
-    
-    -- Indexes
-    INDEX IX_RawData_Date_Catchment_Category (measurement_date, catchment_id, category),
-    INDEX IX_RawData_Source (source_id)
-);
+-- Table: PerformanceMetrics
+IF NOT EXISTS (SELECT * FROM sys.tables WHERE name = 'PerformanceMetrics')
+BEGIN
+    CREATE TABLE dbo.PerformanceMetrics (
+        metric_id INT PRIMARY KEY IDENTITY(1,1),
+        catchment_id INT NOT NULL,
+        parameter_type NVARCHAR(50) NOT NULL,
+        metric_date DATE,
+        drought_severity_index FLOAT,
+        failure_rate FLOAT,
+        days_below_threshold INT,
+        avg_value FLOAT,
+        min_value FLOAT,
+        max_value FLOAT,
+        created_at DATETIME DEFAULT GETDATE(),
+        FOREIGN KEY (catchment_id) REFERENCES dbo.Catchments(catchment_id)
+    );
+    PRINT 'Created PerformanceMetrics table';
+END
 GO
 
--- 4. Processed Data Table - Unified analysis results
-CREATE TABLE dbo.ProcessedData (
-    processed_id BIGINT IDENTITY(1,1) PRIMARY KEY,
-    raw_id BIGINT FOREIGN KEY REFERENCES dbo.RawData(raw_id),
-    source_id INT FOREIGN KEY REFERENCES dbo.DataSources(source_id),
-    catchment_id INT FOREIGN KEY REFERENCES dbo.Catchments(catchment_id),
-    measurement_date DATE NOT NULL,
-    parameter_type NVARCHAR(20) NOT NULL,
-    
-    -- Primary value and standardized score
-    original_value DECIMAL(15,8),
-    mean_value DECIMAL(15,8),
-    std_deviation DECIMAL(15,8),
-    standardized_value DECIMAL(12,6),
-    
-    -- Classification based on standardized value thresholds
-    classification NVARCHAR(30),
-    is_failure BIT,
-    severity_level TINYINT,
-    
-    -- Drought index (for recharge data)
-    drought_index DECIMAL(12,6),
-    
-    processing_date DATETIME2 DEFAULT GETDATE(),
-    
-    -- Indexes for performance
-    INDEX IX_ProcessedData_Date_Catchment_Type (measurement_date, catchment_id, parameter_type),
-    INDEX IX_ProcessedData_Classifications (classification),
-    INDEX IX_ProcessedData_Failures (is_failure, parameter_type)
-);
+-- ============================================================================
+-- STEP 3: CREATE INDEXES
+-- ============================================================================
+
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_RawData_MeasurementDate')
+    CREATE INDEX idx_RawData_MeasurementDate ON dbo.RawData(measurement_date);
 GO
 
--- 5. Performance Metrics Table
-CREATE TABLE dbo.PerformanceMetrics (
-    metrics_id INT IDENTITY(1,1) PRIMARY KEY,
-    source_id INT FOREIGN KEY REFERENCES dbo.DataSources(source_id),
-    catchment_id INT FOREIGN KEY REFERENCES dbo.Catchments(catchment_id),
-    parameter_type NVARCHAR(20) CHECK (parameter_type IN ('Recharge', 'Baseflow', 'GWLevel')),
-    
-    -- Date range for analysis
-    analysis_start_date DATE,
-    analysis_end_date DATE,
-    total_records INT,
-    
-    -- Performance metrics based on Shakhane et al. formulas
-    reliability DECIMAL(6,4),
-    resilience DECIMAL(8,6),
-    vulnerability DECIMAL(6,4),
-    sustainability DECIMAL(6,4),
-    
-    -- Failure statistics
-    total_failures INT,
-    failure_sequences INT,
-    avg_failure_duration DECIMAL(6,2),
-    max_failure_duration INT,
-    avg_failure_severity DECIMAL(8,4),
-    max_failure_severity DECIMAL(8,4),
-    
-    -- Additional metrics
-    failure_intensity DECIMAL(8,4),
-    failure_return_period DECIMAL(8,2),
-    
-    -- Confidence intervals (95%)
-    reliability_ci_lower DECIMAL(6,4),
-    reliability_ci_upper DECIMAL(6,4),
-    
-    calculation_date DATETIME2 DEFAULT GETDATE(),
-    
-    UNIQUE (source_id, catchment_id, parameter_type, analysis_start_date, analysis_end_date)
-);
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_RawData_Category')
+    CREATE INDEX idx_RawData_Category ON dbo.RawData(category);
 GO
 
--- Updated Views
-CREATE VIEW vw_LatestProcessedData AS
-SELECT 
-    pd.processed_id,
-    pd.measurement_date,
-    c.catchment_name,
-    c.parent_catchment,
-    c.catchment_code,
-    ds.file_name,
-    ds.category,
-    pd.parameter_type,
-    pd.original_value,
-    pd.standardized_value,
-    pd.classification,
-    pd.is_failure,
-    pd.severity_level,
-    pd.drought_index,
-    pd.processing_date
-FROM dbo.ProcessedData pd
-INNER JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
-INNER JOIN dbo.DataSources ds ON pd.source_id = ds.source_id
-WHERE ds.processing_status IN ('Completed', 'Completed with Errors');
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_ProcessedData_MeasurementDate')
+    CREATE INDEX idx_ProcessedData_MeasurementDate ON dbo.ProcessedData(measurement_date);
 GO
 
--- View: Raw data with proper structure
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_ProcessedData_ParameterType')
+    CREATE INDEX idx_ProcessedData_ParameterType ON dbo.ProcessedData(parameter_type);
+GO
+
+-- ✅ NEW: Index on subcatchment_name for faster filtering
+IF NOT EXISTS (SELECT * FROM sys.indexes WHERE name = 'idx_DataSources_Subcatchment')
+    CREATE INDEX idx_DataSources_Subcatchment ON dbo.DataSources(subcatchment_name);
+GO
+
+PRINT 'Created indexes';
+GO
+
+-- ============================================================================
+-- STEP 4: CREATE CHECK CONSTRAINTS (Case-Insensitive)
+-- ============================================================================
+
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CHK_DataSources_Category')
+BEGIN
+    ALTER TABLE dbo.DataSources
+    ADD CONSTRAINT CHK_DataSources_Category 
+    CHECK (LOWER(category) IN ('recharge', 'baseflow', 'gwlevel'));
+    PRINT 'Added category constraint to DataSources';
+END
+GO
+
+IF NOT EXISTS (SELECT * FROM sys.check_constraints WHERE name = 'CHK_PerformanceMetrics_ParameterType')
+BEGIN
+    ALTER TABLE dbo.PerformanceMetrics
+    ADD CONSTRAINT CHK_PerformanceMetrics_ParameterType 
+    CHECK (LOWER(parameter_type) IN ('recharge', 'baseflow', 'gwlevel'));
+    PRINT 'Added parameter_type constraint to PerformanceMetrics';
+END
+GO
+
+-- ============================================================================
+-- STEP 5: CREATE VIEWS
+-- ============================================================================
+
+IF OBJECT_ID('dbo.vw_RawDataStructured', 'V') IS NOT NULL
+    DROP VIEW dbo.vw_RawDataStructured;
+GO
+
 CREATE VIEW vw_RawDataStructured AS
 SELECT 
     rd.raw_id,
@@ -208,31 +227,37 @@ SELECT
     c.catchment_name,
     c.parent_catchment,
     ds.file_name,
+    ds.subcatchment_name,      -- ✅ ADDED to view
     rd.category,
     
-    -- Unified value extraction based on category
     CASE 
-        WHEN rd.category = 'Recharge' THEN rd.recharge_converted
-        WHEN rd.category = 'Baseflow' THEN rd.baseflow_value
-        WHEN rd.category = 'GWLevel' THEN rd.gw_level
+        WHEN LOWER(rd.category) = 'recharge' THEN rd.recharge_converted
+        WHEN LOWER(rd.category) = 'baseflow' THEN rd.baseflow_value
+        WHEN LOWER(rd.category) = 'gwlevel' THEN rd.gw_level
     END as primary_value,
     
     CASE 
-        WHEN rd.category = 'Recharge' THEN rd.average_recharge
-        WHEN rd.category = 'Baseflow' THEN rd.average_baseflow
-        WHEN rd.category = 'GWLevel' THEN rd.average_gw_level
+        WHEN LOWER(rd.category) = 'recharge' THEN rd.average_recharge
+        WHEN LOWER(rd.category) = 'baseflow' THEN rd.average_baseflow
+        WHEN LOWER(rd.category) = 'gwlevel' THEN rd.average_gw_level
     END as average_value,
     
     CASE 
-        WHEN rd.category = 'Recharge' THEN rd.recharge_stdev
-        WHEN rd.category = 'Baseflow' THEN rd.baseflow_stdev
-        WHEN rd.category = 'GWLevel' THEN rd.gw_level_stdev
+        WHEN LOWER(rd.category) = 'recharge' THEN rd.recharge_stdev
+        WHEN LOWER(rd.category) = 'baseflow' THEN rd.baseflow_stdev
+        WHEN LOWER(rd.category) = 'gwlevel' THEN rd.gw_level_stdev
     END as std_deviation,
     
     CASE 
-        WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-        WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-        WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+        WHEN LOWER(rd.category) = 'recharge' THEN rd.recharge_deviation
+        WHEN LOWER(rd.category) = 'baseflow' THEN rd.baseflow_deviation
+        WHEN LOWER(rd.category) = 'gwlevel' THEN rd.gw_level_deviation
+    END as parameter_deviation,
+    
+    CASE 
+        WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+        WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+        WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
     END as standardized_value,
     
     rd.original_sheet_name,
@@ -242,7 +267,17 @@ INNER JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
 INNER JOIN dbo.DataSources ds ON rd.source_id = ds.source_id;
 GO
 
--- Updated stored procedure for processing
+PRINT 'Created vw_RawDataStructured view';
+GO
+
+-- ============================================================================
+-- STEP 6: CREATE STORED PROCEDURES
+-- ============================================================================
+
+IF OBJECT_ID('dbo.sp_ProcessRawData', 'P') IS NOT NULL
+    DROP PROCEDURE dbo.sp_ProcessRawData;
+GO
+
 CREATE PROCEDURE sp_ProcessRawData
     @SourceId INT
 AS
@@ -251,117 +286,114 @@ BEGIN
     
     DECLARE @ProcessedCount INT = 0;
     
-    -- Process each category of data
     INSERT INTO dbo.ProcessedData (
         raw_id, source_id, catchment_id, measurement_date, parameter_type,
         original_value, mean_value, std_deviation, standardized_value,
-        drought_index, classification, is_failure, severity_level
+        parameter_deviation, drought_index, classification, is_failure, severity_level
     )
     SELECT 
         rd.raw_id,
         rd.source_id,
         rd.catchment_id,
-        rd.measurement_date,  -- Now it's already a DATE type, no conversion needed
+        rd.measurement_date,
         rd.category as parameter_type,
         
-        -- Extract primary value based on category
         CASE 
-            WHEN rd.category = 'Recharge' THEN rd.recharge_converted
-            WHEN rd.category = 'Baseflow' THEN rd.baseflow_value
-            WHEN rd.category = 'GWLevel' THEN rd.gw_level
+            WHEN LOWER(rd.category) = 'recharge' THEN rd.recharge_converted
+            WHEN LOWER(rd.category) = 'baseflow' THEN rd.baseflow_value
+            WHEN LOWER(rd.category) = 'gwlevel' THEN rd.gw_level
         END as original_value,
         
-        -- Extract mean value
         CASE 
-            WHEN rd.category = 'Recharge' THEN rd.average_recharge
-            WHEN rd.category = 'Baseflow' THEN rd.average_baseflow
-            WHEN rd.category = 'GWLevel' THEN rd.average_gw_level
+            WHEN LOWER(rd.category) = 'recharge' THEN rd.average_recharge
+            WHEN LOWER(rd.category) = 'baseflow' THEN rd.average_baseflow
+            WHEN LOWER(rd.category) = 'gwlevel' THEN rd.average_gw_level
         END as mean_value,
         
-        -- Extract standard deviation
         CASE 
-            WHEN rd.category = 'Recharge' THEN rd.recharge_stdev
-            WHEN rd.category = 'Baseflow' THEN rd.baseflow_stdev
-            WHEN rd.category = 'GWLevel' THEN rd.gw_level_stdev
+            WHEN LOWER(rd.category) = 'recharge' THEN rd.recharge_stdev
+            WHEN LOWER(rd.category) = 'baseflow' THEN rd.baseflow_stdev
+            WHEN LOWER(rd.category) = 'gwlevel' THEN rd.gw_level_stdev
         END as std_deviation,
         
-        -- Use existing standardized value
         CASE 
-            WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-            WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-            WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+            WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+            WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+            WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
         END as standardized_value,
         
-        -- Drought index (mainly for recharge)
+        CASE 
+            WHEN LOWER(rd.category) = 'recharge' THEN rd.recharge_deviation
+            WHEN LOWER(rd.category) = 'baseflow' THEN rd.baseflow_deviation
+            WHEN LOWER(rd.category) = 'gwlevel' THEN rd.gw_level_deviation
+        END as parameter_deviation,
+        
         rd.drought_index_recharge,
         
-        -- Classify based on standardized value (Z-score thresholds)
         CASE 
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
             END > 0.5 THEN 'Surplus'
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
             END BETWEEN -0.5 AND 0.5 THEN 'Normal'
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
             END BETWEEN -1.0 AND -0.5 THEN 'Moderate_Deficit'
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
             END BETWEEN -1.5 AND -1.0 THEN 'Severe_Deficit'
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
             END < -1.5 THEN 'Extreme_Deficit'
             ELSE 'Normal'
         END as classification,
         
-        -- Failure flag (< -0.5 is considered failure)
         CASE 
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
             END < -0.5 THEN 1 
             ELSE 0 
         END as is_failure,
         
-        -- Severity level
         CASE 
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
-            END > 0.5 THEN -1 -- Surplus
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
+            END > 0.5 THEN -1
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
-            END BETWEEN -0.5 AND 0.5 THEN 0 -- Normal
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
+            END BETWEEN -0.5 AND 0.5 THEN 0
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
-            END BETWEEN -1.0 AND -0.5 THEN 1 -- Moderate
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
+            END BETWEEN -1.0 AND -0.5 THEN 1
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
-            END BETWEEN -1.5 AND -1.0 THEN 2 -- Severe
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
+            END BETWEEN -1.5 AND -1.0 THEN 2
             WHEN CASE 
-                WHEN rd.category = 'Recharge' THEN rd.drought_index_recharge
-                WHEN rd.category = 'Baseflow' THEN rd.standardized_baseflow
-                WHEN rd.category = 'GWLevel' THEN rd.standardized_gw_level
-            END < -1.5 THEN 3 -- Extreme
+                WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
+                WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
+                WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
+            END < -1.5 THEN 3
             ELSE 0
         END as severity_level
         
@@ -374,7 +406,6 @@ BEGIN
     
     SET @ProcessedCount = @@ROWCOUNT;
      
-    -- Update source status
     UPDATE dbo.DataSources 
     SET processing_status = 'Completed',
         updated_at = GETDATE()
@@ -384,12 +415,97 @@ BEGIN
 END;
 GO
 
-PRINT 'Fixed database schema created successfully!';
-PRINT 'Key changes:';
-PRINT '- RawData.measurement_date is now DATE type (not NVARCHAR)';
-PRINT '- DataSources date range fields are NVARCHAR for flexibility';
-PRINT '- All date handling is now consistent across tables';
-PRINT '- Stored procedure updated to handle proper DATE types';
+PRINT 'Created sp_ProcessRawData procedure';
 GO
 
+-- ============================================================================
+-- STEP 7: INSERT SAMPLE CATCHMENT DATA
+-- ============================================================================
 
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Crocodile')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Crocodile', 'Limpopo', 'Crocodile River Catchment');
+    PRINT 'Inserted sample catchment: Crocodile';
+END
+
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Assegai')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Assegai', 'Limpopo', 'Assegai River Catchment');
+    PRINT 'Inserted sample catchment: Assegai';
+END
+
+-- ✅ NEW: Add more catchments referenced in your frontend
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Lower Komati')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Lower Komati', 'Inkomati', 'Lower Komati River Catchment');
+    PRINT 'Inserted sample catchment: Lower Komati';
+END
+
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Lower Sabie')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Lower Sabie', 'Inkomati', 'Lower Sabie River Catchment');
+    PRINT 'Inserted sample catchment: Lower Sabie';
+END
+
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Ngwempisi')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Ngwempisi', 'Inkomati', 'Ngwempisi River Catchment');
+    PRINT 'Inserted sample catchment: Ngwempisi';
+END
+
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Sand')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Sand', 'Inkomati', 'Sand River Catchment');
+    PRINT 'Inserted sample catchment: Sand';
+END
+
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Upper Komati')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Upper Komati', 'Inkomati', 'Upper Komati River Catchment');
+    PRINT 'Inserted sample catchment: Upper Komati';
+END
+
+IF NOT EXISTS (SELECT * FROM dbo.Catchments WHERE catchment_name = 'Upper Sabie')
+BEGIN
+    INSERT INTO dbo.Catchments (catchment_name, parent_catchment, description)
+    VALUES ('Upper Sabie', 'Inkomati', 'Upper Sabie River Catchment');
+    PRINT 'Inserted sample catchment: Upper Sabie';
+END
+GO
+
+PRINT '';
+PRINT '========================================';
+PRINT 'DATABASE SETUP COMPLETE!';
+PRINT '========================================';
+PRINT 'Database: GroundwaterAnalysis';
+PRINT 'Tables created:';
+PRINT '  - Catchments (8 sample catchments)';
+PRINT '  - DataSources (✅ with subcatchment_name field)';
+PRINT '  - RawData (with deviation columns)';
+PRINT '  - ProcessedData (with parameter_deviation)';
+PRINT '  - PerformanceMetrics';
+PRINT '';
+PRINT 'Views created:';
+PRINT '  - vw_RawDataStructured (✅ includes subcatchment_name)';
+PRINT '';
+PRINT 'Procedures created:';
+PRINT '  - sp_ProcessRawData';
+PRINT '';
+PRINT 'Indexes created:';
+PRINT '  - Standard performance indexes';
+PRINT '  - ✅ Index on subcatchment_name';
+PRINT '';
+PRINT 'Ready to accept:';
+PRINT '  - Recharge deviation (recharge_deviation)';
+PRINT '  - Baseflow deviation (baseflow_deviation)';
+PRINT '  - GW Level deviation (gw_level_deviation)';
+PRINT '  - ✅ Subcatchment tracking (subcatchment_name)';
+PRINT '========================================';
+GO

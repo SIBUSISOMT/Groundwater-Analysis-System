@@ -1,4 +1,4 @@
-   class AdvancedGroundwaterReports {
+class AdvancedGroundwaterReports {
             constructor() {
                 this.apiBase = 'http://localhost:5000/api';
                 this.allData = [];
@@ -53,19 +53,33 @@
                 async loadAllData() {
                     this.showLoading('Loading all groundwater data...');
                     try {
-                        // Don't specify parameter - this loads ALL categories
-                        const response = await fetch(`${this.apiBase}/data?limit=10000`);
+                        // Use /api/detailed-records for correct data format with proper column names
+                        console.log('Loading data from /api/detailed-records...');
+                        const response = await fetch(`${this.apiBase}/detailed-records?limit=10000`);
                         const result = await response.json();
                         
-                        this.allData = result.data || [];
-                        this.filteredData = this.allData;
-                        this.isFiltered = false;
+                        console.log('Data loaded:', result);
                         
-                        this.updateDisplay();
-                        this.showToast(`Loaded ${this.allData.length} total records from all sub-catchments and parameters`, 'success');
+                        if (result.success) {
+                            // Use 'records' key instead of 'data'
+                            this.allData = result.records || [];
+                            this.filteredData = this.allData;
+                            this.isFiltered = false;
+                            
+                            this.updateDisplay();
+                            this.showToast(`Loaded ${this.allData.length} total records from all sub-catchments and parameters`, 'success');
+                        } else {
+                            this.allData = [];
+                            this.filteredData = [];
+                            this.updateDisplay();
+                            this.showToast('No data available. Upload data to get started.', 'info');
+                        }
                     } catch (error) {
                         this.showToast('Failed to load data', 'error');
                         console.error('Load error:', error);
+                        this.allData = [];
+                        this.filteredData = [];
+                        this.updateDisplay();
                     } finally {
                         this.hideLoading();
                     }
@@ -93,18 +107,26 @@
                         if (value) params.append(key, value);
                     });
                     
-                    const response = await fetch(`${this.apiBase}/data?${params}&limit=10000`);
+                    // Use /api/detailed-records with correct parameters
+                    const response = await fetch(`${this.apiBase}/detailed-records?${params}&limit=10000`);
                     const result = await response.json();
                     
-                    this.filteredData = result.data || [];
-                    this.isFiltered = true;
-                    this.currentPage = 1;
-                    
-                    this.updateActiveFilters(filters);
-                    this.updateDisplay();
-                    this.showToast(`Filtered to ${this.filteredData.length} records`, 'success');
+                    if (result.success) {
+                        this.filteredData = result.records || [];
+                        this.isFiltered = true;
+                        this.currentPage = 1;
+                        
+                        this.updateActiveFilters(filters);
+                        this.updateDisplay();
+                        this.showToast(`Filtered to ${this.filteredData.length} records`, 'success');
+                    } else {
+                        this.filteredData = [];
+                        this.updateDisplay();
+                        this.showToast('No records match the applied filters', 'info');
+                    }
                 } catch (error) {
                     this.showToast('Filter application failed', 'error');
+                    console.error('Filter error:', error);
                 } finally {
                     this.hideLoading();
                 }
@@ -167,17 +189,17 @@
                 document.getElementById('totalRecords').textContent = data.length.toLocaleString();
                 
                 // Failure rate
-                const failures = data.filter(d => d.is_failure === 1).length;
+                const failures = data.filter(d => d.status === 'Failure').length;
                 const rate = data.length > 0 ? ((failures / data.length) * 100).toFixed(1) : 0;
                 document.getElementById('failureRate').textContent = rate + '%';
                 
                 // Active catchments
-                const catchments = new Set(data.map(d => d.catchment_name));
+                const catchments = new Set(data.map(d => d.sub_catchment));
                 document.getElementById('activeCatchments').textContent = catchments.size;
                 
                 // Date range
                 if (data.length > 0) {
-                    const dates = data.map(d => new Date(d.measurement_date)).filter(d => !isNaN(d));
+                    const dates = data.map(d => new Date(d.date)).filter(d => !isNaN(d));
                     if (dates.length > 0) {
                         const minDate = new Date(Math.min(...dates)).toLocaleDateString();
                         const maxDate = new Date(Math.max(...dates)).toLocaleDateString();
@@ -202,16 +224,16 @@
                 }
                 
                 const sortedData = [...this.filteredData]
-                    .filter(d => d.measurement_date && d.zscore !== null)
-                    .sort((a, b) => new Date(a.measurement_date) - new Date(b.measurement_date));
+                    .filter(d => d.date && d.z_score !== null)
+                    .sort((a, b) => new Date(a.date) - new Date(b.date));
                 
                 this.charts.timeSeries = new Chart(ctx, {
                     type: 'line',
                     data: {
-                        labels: sortedData.map(d => new Date(d.measurement_date).toLocaleDateString()),
+                        labels: sortedData.map(d => new Date(d.date).toLocaleDateString()),
                         datasets: [{
                             label: 'Z-Score',
-                            data: sortedData.map(d => d.zscore),
+                            data: sortedData.map(d => d.z_score),
                             borderColor: '#3b82f6',
                             backgroundColor: 'rgba(59, 130, 246, 0.1)',
                             tension: 0.4,
@@ -243,7 +265,7 @@
     
     const catchmentData = {};
     this.filteredData.forEach(d => {
-        const catchment = d.catchment_name;
+        const catchment = d.sub_catchment;
         if (!catchmentData[catchment]) {
             catchmentData[catchment] = 0;
         }
@@ -300,13 +322,13 @@ updateFailureTrendsChart() {
     const catchmentTrends = {};
     
     this.filteredData.forEach(d => {
-        const catchment = d.catchment_name;
+        const catchment = d.sub_catchment;
         if (!catchmentTrends[catchment]) {
             catchmentTrends[catchment] = {};
         }
         
-        if (d.measurement_date) {
-            const date = new Date(d.measurement_date);
+        if (d.date) {
+            const date = new Date(d.date);
             const monthYear = `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}`;
             
             if (!catchmentTrends[catchment][monthYear]) {
@@ -318,7 +340,7 @@ updateFailureTrendsChart() {
             }
             
             catchmentTrends[catchment][monthYear].total++;
-            if (d.is_failure === 1) {
+            if (d.status === 'Failure') {
                 catchmentTrends[catchment][monthYear].failures++;
             }
         }
@@ -480,25 +502,27 @@ updateFailureTrendsChart() {
                             </tr>
                         </thead>
                         <tbody class="divide-y divide-gray-200">
-                            ${pageData.map(row => `
+                            ${pageData.map(row => {
+                                const statusColor = row.status === 'Failure' ? 'text-red-600' : 'text-green-600';
+                                const statusIcon = row.status === 'Failure' ? 'fa-exclamation-circle' : 'fa-check-circle';
+                                return `
                                 <tr class="hover:bg-gray-50">
-                                    <td class="px-4 py-3">${new Date(row.measurement_date).toLocaleDateString()}</td>
-                                    <td class="px-4 py-3">${row.catchment_name || 'N/A'}</td>
-                                    <td class="px-4 py-3">${row.category || 'N/A'}</td>
+                                    <td class="px-4 py-3">${row.date || 'N/A'}</td>
+                                    <td class="px-4 py-3">${row.sub_catchment || 'N/A'}</td>
+                                    <td class="px-4 py-3">${row.parameter || 'N/A'}</td>
                                     <td class="px-4 py-3 text-right">${(row.original_value || 0).toFixed(2)}</td>
-                                    <td class="px-4 py-3 text-right font-medium">${(row.zscore || 0).toFixed(3)}</td>
+                                    <td class="px-4 py-3 text-right font-medium">${(row.z_score || 0).toFixed(3)}</td>
                                     <td class="px-4 py-3">
                                         <span class="px-2 py-1 text-xs rounded ${this.getClassificationColor(row.classification)}">
-                                            ${(row.classification || 'Unknown').replace('_', ' ')}
+                                            ${(row.classification || 'Unknown')}
                                         </span>
                                     </td>
                                     <td class="px-4 py-3 text-center">
-                                        ${row.is_failure ? 
-                                            '<span class="text-red-600"><i class="fas fa-exclamation-circle"></i></span>' : 
-                                            '<span class="text-green-600"><i class="fas fa-check-circle"></i></span>'}
+                                        <span class="${statusColor}"><i class="fas ${statusIcon}"></i></span>
                                     </td>
                                 </tr>
-                            `).join('')}
+                            `;
+                            }).join('')}
                         </tbody>
                     </table>
                 `;
@@ -580,8 +604,16 @@ updateFailureTrendsChart() {
             }
             
             toggleFilters() {
+                console.log('Toggle filters clicked');
                 const panel = document.getElementById('filtersPanel');
+                if (!panel) {
+                    console.warn('Filter panel not found');
+                    return;
+                }
+                
+                console.log('Current hidden status:', panel.classList.contains('hidden'));
                 panel.classList.toggle('hidden');
+                console.log('After toggle:', panel.classList.contains('hidden'));
             }
             
             async refresh() {
@@ -608,132 +640,189 @@ updateFailureTrendsChart() {
 }
             
 
- async exportPDF() {
+// Fixed exportPDF function
+async exportPDF() {
     console.log('=== PDF Export Started ===');
     this.showLoading('Preparing PDF report...');
     
     try {
-        // Show all data
+        // Store original pagination state
         const originalRowsPerPage = this.rowsPerPage;
+        
+        // Show all data temporarily
         this.rowsPerPage = 'all';
         this.renderDataTable();
         
-        // Wait for render
-        await new Promise(resolve => setTimeout(resolve, 2000));
+        // Wait for table to render
+        await new Promise(resolve => setTimeout(resolve, 1000));
         
-        // Find container
-        const container = document.querySelector('.container.mx-auto');
-        if (!container) {
-            throw new Error('Could not find content container');
+        // Get all page content
+        const mainContent = document.querySelector('main') || document.querySelector('.container');
+        
+        if (!mainContent) {
+            throw new Error('Could not find main content');
         }
         
-        console.log('Converting charts to images...');
+        // Create a deep clone to avoid modifying original
+        const clonedContent = mainContent.cloneNode(true);
         
-        // Convert all Chart.js canvases to static images
-        const chartCanvases = container.querySelectorAll('canvas');
-        const chartImages = [];
+        // Remove print-hidden elements
+        const hiddenElements = clonedContent.querySelectorAll('.no-print');
+        hiddenElements.forEach(el => el.remove());
         
-        chartCanvases.forEach(canvas => {
+        // Remove unnecessary UI elements
+        const filtersPanel = clonedContent.querySelector('#filtersPanel');
+        if (filtersPanel) filtersPanel.remove();
+        
+        const actionBar = clonedContent.querySelector('[class*="action"]');
+        if (actionBar) actionBar.remove();
+        
+        // Create container for PDF
+        const pdfContainer = document.createElement('div');
+        pdfContainer.id = 'pdf-container-temp';
+        pdfContainer.style.cssText = `
+            position: absolute;
+            left: -9999px;
+            top: -9999px;
+            width: 1400px;
+            background: white;
+            padding: 30px;
+        `;
+        
+        // Add header
+        const header = document.createElement('div');
+        header.style.cssText = `
+            text-align: center;
+            margin-bottom: 30px;
+            border-bottom: 3px solid #3b82f6;
+            padding-bottom: 20px;
+        `;
+        header.innerHTML = `
+            <h1 style="color: #1e40af; font-size: 32px; margin: 0 0 10px 0;">Advanced HydroCore Reports</h1>
+            <p style="color: #666; margin: 5px 0; font-size: 14px;">Comprehensive Data Analysis and Reporting</p>
+            <p style="color: #999; font-size: 12px; margin: 10px 0;">Generated: ${new Date().toLocaleString()}</p>
+            <p style="background: #f0f9ff; padding: 10px; border-radius: 4px; color: #1e40af; font-weight: bold; margin: 10px 0;">
+                Status: ${this.isFiltered ? 'FILTERED DATA' : 'COMPLETE DATASET'}
+            </p>
+        `;
+        pdfContainer.appendChild(header);
+        
+        // Add cloned content (includes summary cards, charts, table)
+        pdfContainer.appendChild(clonedContent);
+        
+        // Add footer
+        const footer = document.createElement('div');
+        footer.style.cssText = `
+            margin-top: 30px;
+            padding-top: 20px;
+            border-top: 1px solid #e5e7eb;
+            text-align: center;
+            font-size: 11px;
+            color: #999;
+        `;
+        footer.innerHTML = `
+            <p>HydroCore Groundwater Analysis System | Page generated on ${new Date().toLocaleDateString()}</p>
+        `;
+        pdfContainer.appendChild(footer);
+        
+        // Append to body temporarily
+        document.body.appendChild(pdfContainer);
+        
+        this.showLoading('Converting charts...');
+        
+        // Convert all canvases to images (they need time to render)
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        
+        const canvases = pdfContainer.querySelectorAll('canvas');
+        console.log(`Found ${canvases.length} charts to convert`);
+        
+        for (const canvas of canvases) {
             try {
-                // Get the parent container
-                const parent = canvas.parentElement;
-                
-                // Convert canvas to image
                 const img = document.createElement('img');
                 img.src = canvas.toDataURL('image/png');
-                img.style.width = '100%';
-                img.style.maxHeight = '400px';
-                img.className = 'chart-image';
-                
-                // Store reference to restore later
-                chartImages.push({
-                    canvas: canvas,
-                    parent: parent,
-                    img: img
-                });
-                
-                // Replace canvas with image
-                parent.replaceChild(img, canvas);
+                img.style.cssText = `
+                    display: block;
+                    width: 100%;
+                    max-width: 100%;
+                    margin: 10px 0;
+                    border: 1px solid #e5e7eb;
+                    border-radius: 4px;
+                `;
+                canvas.parentNode.replaceChild(img, canvas);
             } catch (err) {
-                console.warn('Failed to convert chart:', err);
+                console.warn('Chart conversion failed:', err);
             }
-        });
+        }
         
-        console.log(`Converted ${chartImages.length} charts to images`);
+        this.showLoading('Generating PDF...');
         
-        // Wait a bit for images to settle
-        await new Promise(resolve => setTimeout(resolve, 500));
-        
-        // Configure html2pdf
+        // Configure pdf options
         const opt = {
-            margin: [10, 10, 10, 10],
+            margin: [15, 15, 15, 15],
             filename: `groundwater_report_${new Date().toISOString().split('T')[0]}.pdf`,
-            image: { 
-                type: 'jpeg', 
-                quality: 0.95
+            image: {
+                type: 'jpeg',
+                quality: 0.98
             },
-            html2canvas: { 
+            html2canvas: {
                 scale: 2,
-                logging: false,
                 useCORS: true,
                 allowTaint: true,
-                backgroundColor: '#ffffff',
-                letterRendering: true
+                logging: false,
+                backgroundColor: '#ffffff'
             },
-            jsPDF: { 
-                unit: 'mm', 
-                format: 'a3',
-                orientation: 'landscape'
+            jsPDF: {
+                unit: 'mm',
+                format: 'a4',
+                orientation: 'landscape',
+                compress: true
             },
             pagebreak: {
-                mode: ['avoid-all', 'css', 'legacy']
+                mode: ['css', 'legacy']
             }
         };
         
-        this.showLoading('Generating PDF...');
-        console.log('Starting PDF generation...');
-        
-        await html2pdf().set(opt).from(container).save();
+        // Generate and save PDF
+        await html2pdf().set(opt).from(pdfContainer).save();
         
         console.log('PDF generated successfully');
         
-        // Restore canvases
-        console.log('Restoring charts...');
-        chartImages.forEach(item => {
-            item.parent.replaceChild(item.canvas, item.img);
-        });
+        // Cleanup
+        document.body.removeChild(pdfContainer);
         
         // Restore pagination
         this.rowsPerPage = originalRowsPerPage;
         this.renderDataTable();
         
-        // Recreate charts since we replaced them
-        this.updateCharts();
-        
         this.showToast('PDF exported successfully', 'success');
         
     } catch (error) {
-        console.error('PDF Error:', error);
-        this.showToast('PDF export failed. Use Print button instead.', 'error');
+        console.error('PDF Export Error:', error);
+        console.error('Stack:', error.stack);
         
-        // Restore state
-        if (this.rowsPerPage === 'all') {
-            this.rowsPerPage = 25;
-            this.renderDataTable();
+        // Cleanup on error
+        const container = document.getElementById('pdf-container-temp');
+        if (container && container.parentNode) {
+            document.body.removeChild(container);
         }
+        
+        this.showToast('PDF export failed: ' + error.message, 'error');
         
         // Offer fallback
         setTimeout(() => {
-            const usePrint = confirm('PDF export failed. Would you like to use browser Print to PDF instead? (More reliable)');
+            const usePrint = confirm('PDF export failed. Would you like to use browser Print to PDF instead?');
             if (usePrint) {
                 this.printReport();
             }
-        }, 1000);
+        }, 500);
+        
     } finally {
         this.hideLoading();
         console.log('=== PDF Export Ended ===');
     }
 }
+
+
 
 // Option 2: Browser Print (more reliable fallback)
 // This is your existing printReport() - make sure it's working
@@ -819,5 +908,3 @@ updateFailureTrendsChart() {
         document.addEventListener('DOMContentLoaded', () => {
             reports = new AdvancedGroundwaterReports();
         });
-
-        

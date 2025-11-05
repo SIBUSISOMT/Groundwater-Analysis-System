@@ -148,73 +148,114 @@ async handleFileUpload(file) {
         this.hideLoading();
     }
 }
-    async loadDataSources() {
-        try {
-            const response = await fetch(`${this.apiBase}/sources`);
-            const data = await response.json();
-            
-            const container = document.getElementById('dataSourcesTable');
-            if (!container) return;
-            
-            if (!data.sources || data.sources.length === 0) {
-                container.innerHTML = `
-                    <div class="text-center py-8 text-gray-500">
-                        <i class="fas fa-database text-4xl mb-4"></i>
-                        <p>No data sources found</p>
-                        <p class="text-sm mt-2">Upload an Excel file to get started</p>
-                    </div>
-                `;
-                return;
-            }
-            
-            const table = `
-                <table class="w-full text-sm">
-                    <thead class="bg-gray-50">
-                        <tr>
-                            <th class="px-4 py-3 text-left font-semibold">File Name</th>
-                            <th class="px-4 py-3 text-left font-semibold">Category</th>
-                            <th class="px-4 py-3 text-left font-semibold">Subcatchment</th>
-                            <th class="px-4 py-3 text-left font-semibold">Upload Date</th>
-                            <th class="px-4 py-3 text-left font-semibold">Records</th>
-                            <th class="px-4 py-3 text-left font-semibold">Status</th>
-                            <th class="px-4 py-3 text-center font-semibold">Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody class="divide-y divide-gray-200">
-                        ${data.sources.map(source => `
-                            <tr class="hover:bg-gray-50">
-                                <td class="px-4 py-3 font-medium">${source.file_name || 'Unknown'}</td>
-                                <td class="px-4 py-3">${source.category || 'N/A'}</td>
-                                <td class="px-4 py-3">${source.subcatchment || 'N/A'}</td>
-                                <td class="px-4 py-3">${source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'N/A'}</td>
-                                <td class="px-4 py-3">${(source.total_records || 0).toLocaleString()}</td>
-                                <td class="px-4 py-3">
-                                    <span class="px-2 py-1 text-xs rounded ${
-                                        source.processing_status === 'Completed' ? 'bg-green-100 text-green-800' :
-                                        source.processing_status === 'Failed' ? 'bg-red-100 text-red-800' :
-                                        'bg-yellow-100 text-yellow-800'
-                                    }">
-                                        ${source.processing_status || 'Unknown'}
-                                    </span>
-                                </td>
-                                <td class="px-4 py-3 text-center">
-                                    <button onclick="app.deleteSource(${source.source_id})" class="text-red-600 hover:text-red-800" title="Delete">
-                                        <i class="fas fa-trash"></i>
-                                    </button>
-                                </td>
-                            </tr>
-                        `).join('')}
-                    </tbody>
-                </table>
+
+async loadDataSources() {
+    try {
+        const response = await fetch(`${this.apiBase}/sources`);
+        
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        
+        const data = await response.json();
+        console.log('Here are the data sources loaded:', data);
+        
+        const container = document.getElementById('dataSourcesTable');
+        if (!container) return;
+        
+        if (!data.sources || data.sources.length === 0) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-gray-500">
+                    <i class="fas fa-database text-4xl mb-4"></i>
+                    <p>No data sources found</p>
+                    <p class="text-sm mt-2">Upload an Excel file to get started</p>
+                </div>
             `;
-            
-            container.innerHTML = table;
-        } catch (error) {
-            console.error('Failed to load data sources:', error);
+            return;
+        }
+        
+        const table = `
+            <table class="w-full text-sm">
+                <thead class="bg-gray-50">
+                    <tr>
+                        <th class="px-4 py-3 text-left font-semibold">File Name</th>
+                        <th class="px-4 py-3 text-left font-semibold">Category</th>
+                        <th class="px-4 py-3 text-left font-semibold">Subcatchment</th>
+                        <th class="px-4 py-3 text-left font-semibold">Upload Date</th>
+                        <th class="px-4 py-3 text-left font-semibold">Records</th>
+                        <th class="px-4 py-3 text-left font-semibold">Status</th>
+                        <th class="px-4 py-3 text-center font-semibold">Actions</th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-200">
+                    ${data.sources.map(source => `
+                        <tr class="hover:bg-gray-50">
+                            <td class="px-4 py-3 font-medium">${source.filename || 'Unknown'}</td>
+                            <td class="px-4 py-3">
+                                <span class="px-2 py-1 text-xs rounded ${
+                                    source.category === 'BASEFLOW' ? 'bg-blue-100 text-blue-800' :
+                                    source.category === 'RECHARGE' ? 'bg-green-100 text-green-800' :
+                                    source.category === 'GWLEVEL' ? 'bg-purple-100 text-purple-800' :
+                                    'bg-gray-100 text-gray-800'
+                                }">
+                                    ${source.category || 'N/A'}
+                                </span>
+                            </td>
+                            <td class="px-4 py-3">${source.subcatchment_name || 'N/A'}</td>
+                            <td class="px-4 py-3">${source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'N/A'}</td>
+                            <td class="px-4 py-3 text-center">
+                                <span class="font-semibold">${(source.total_records || 0).toLocaleString()}</span>
+                            </td>
+                            <td class="px-4 py-3">
+                                <span class="px-2 py-1 text-xs rounded font-semibold ${
+                                    source.processing_status === 'Completed' ? 'bg-green-100 text-green-800' :
+                                    source.processing_status === 'Failed' ? 'bg-red-100 text-red-800' :
+                                    source.processing_status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
+                                    'bg-gray-100 text-gray-800'
+                                }">
+                                    ${source.processing_status || 'Unknown'}
+                                </span>
+                                ${source.error_message ? `
+                                    <div class="text-xs text-red-600 mt-1" title="${source.error_message}">
+                                        <i class="fas fa-exclamation-circle"></i> Error
+                                    </div>
+                                ` : ''}
+                            </td>
+                            <td class="px-4 py-3 text-center">
+                                <button 
+                                    onclick="app.deleteSource(${source.source_id})" 
+                                    class="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-1 rounded transition-all" 
+                                    title="Delete this data source">
+                                    <i class="fas fa-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `).join('')}
+                </tbody>
+            </table>
+        `;
+        
+        container.innerHTML = table;
+        
+    } catch (error) {
+        console.error('Failed to load data sources:', error);
+        const container = document.getElementById('dataSourcesTable');
+        if (container) {
+            container.innerHTML = `
+                <div class="text-center py-8 text-red-500">
+                    <i class="fas fa-exclamation-triangle text-4xl mb-4"></i>
+                    <p class="font-semibold">Failed to load data sources</p>
+                    <p class="text-sm mt-2">${error.message}</p>
+                    <button onclick="app.loadDataSources()" class="mt-4 px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700">
+                        Retry
+                    </button>
+                </div>
+            `;
         }
     }
+}
 
-    printReport() {
+  printReport() {
     const originalRowsPerPage = this.rowsPerPage;
     this.rowsPerPage = 1000; // Show more data
     this.renderTable();
@@ -226,116 +267,245 @@ async handleFileUpload(file) {
             this.renderTable();
         }, 100);
     }, 500);
+    }
+    
+async deleteSource(sourceId) {
+    if (!confirm('Are you sure you want to delete this data source? This will also delete all associated raw and processed data.')) {
+        return;
+    }
+    
+    this.showLoading('Deleting source...');
+    
+    try {
+        const response = await fetch(`${this.apiBase}/sources/${sourceId}`, {
+            method: 'DELETE',
+            headers: {
+                'Content-Type': 'application/json'
+            }
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        }
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Delete failed');
+        }
+        
+        this.showToast('Data source deleted successfully', 'success');
+        
+        // Reload data sources table
+        await this.loadDataSources();
+        
+        // Optionally reload other data
+        if (typeof this.loadAllFailures === 'function') {
+            await this.loadAllFailures();
+        }
+        
+    } catch (error) {
+        console.error('Delete error:', error);
+        this.showToast(`Failed to delete source: ${error.message}`, 'error');
+    } finally {
+        this.hideLoading();
+    }
+}
+
+
+async uploadFile() {
+    const fileInput = document.getElementById('fileInput');
+    const categorySelect = document.getElementById('categorySelect');
+    const subcatchmentSelect = document.getElementById('subcatchmentSelect');
+    
+    if (!fileInput.files || fileInput.files.length === 0) {
+        this.showToast('Please select a file', 'error');
+        return;
+    }
+    
+    const category = categorySelect.value;
+    const subcatchment = subcatchmentSelect.value;
+    
+    if (!category) {
+        this.showToast('Please select a category', 'error');
+        return;
+    }
+    
+    if (!subcatchment) {
+        this.showToast('Please select a subcatchment', 'error');
+        return;
+    }
+    
+    const file = fileInput.files[0];
+    
+    // Validate file type
+    if (!file.name.endsWith('.xlsx') && !file.name.endsWith('.xls')) {
+        this.showToast('Please select an Excel file (.xlsx or .xls)', 'error');
+        return;
+    }
+    
+    this.showLoading(`Uploading ${file.name}...`);
+    
+    try {
+        const formData = new FormData();
+        formData.append('file', file);
+        formData.append('category', category);
+        formData.append('subcatchment', subcatchment);
+        
+        const response = await fetch(`${this.apiBase}/upload`, {
+            method: 'POST',
+            body: formData
+        });
+        
+        const data = await response.json();
+        
+        if (!response.ok) {
+            throw new Error(data.error || `HTTP error! status: ${response.status}`);
+        }
+        
+        if (!data.success) {
+            throw new Error(data.error || 'Upload failed');
+        }
+        
+        this.showToast(`File uploaded successfully! Processed ${data.records_processed || 0} records.`, 'success');
+        
+        // Reset form
+        fileInput.value = '';
+        categorySelect.value = '';
+        subcatchmentSelect.value = '';
+        
+        // Reload data sources
+        await this.loadDataSources();
+        
+        // Optionally reload other data
+        if (typeof this.loadAllFailures === 'function') {
+            await this.loadAllFailures();
+        }
+        
+    } catch (error) {
+        console.error('Upload error:', error);
+        this.showToast(`Upload failed: ${error.message}`, 'error');
+    } finally {
+        this.hideLoading();
+    }
+}
+
+    
+async loadCatchments() {
+    try {
+        const response = await fetch(`${this.apiBase}/filter-options`);
+        const data = await response.json();
+        
+        const select = document.getElementById('catchmentFilter');
+        if (data.catchments && select) {
+            data.catchments.forEach(catchment => {
+                const option = document.createElement('option');
+                option.value = catchment;
+                option.textContent = catchment;
+                select.appendChild(option);
+            });
+        }
+    } catch (error) {
+        console.error('Failed to load catchments:', error);
+    }
 }
     
-    async deleteSource(sourceId) {
-        if (!confirm('Are you sure you want to delete this data source?')) return;
+async loadAllFailures() {
+    this.showLoading('Loading comprehensive failure analysis...');
+    try {
+        console.log('Loading failure analysis from /api/failure-analysis...');
+        const response = await fetch(`${this.apiBase}/failure-analysis`);
+        const result = await response.json();
         
-        this.showLoading('Deleting source...');
-        try {
-            const response = await fetch(`${this.apiBase}/sources/${sourceId}`, {
-                method: 'DELETE'
-            });
-            
-            if (!response.ok) throw new Error('Delete failed');
-            
-            this.showToast('Data source deleted successfully', 'success');
-            await this.loadDataSources();
-            await this.loadAllFailures();
-        } catch (error) {
-            this.showToast(`Failed to delete source: ${error.message}`, 'error');
-        } finally {
-            this.hideLoading();
-        }
-    }
-    
-    async loadCatchments() {
-        try {
-            const response = await fetch(`${this.apiBase}/filter-options`);
-            const data = await response.json();
-            
-            const select = document.getElementById('catchmentFilter');
-            if (data.catchments) {
-                data.catchments.forEach(catchment => {
-                    const option = document.createElement('option');
-                    option.value = catchment;
-                    option.textContent = catchment;
-                    select.appendChild(option);
-                });
-            }
-        } catch (error) {
-            console.error('Failed to load catchments:', error);
-        }
-    }
-    
-    async loadAllFailures() {
-        this.showLoading('Loading comprehensive failure analysis...');
-        try {
-            const response = await fetch(`${this.apiBase}/failure-analysis`);
-            const result = await response.json();
-            
-            this.allData = result.failure_analysis || [];
+        console.log('Failure analysis response:', result);
+        
+        if (result.success) {
+            // Use consistent field name: failure_analysis
+            this.allData = result.failure_analysis || result.analysis || [];
             this.filteredData = this.allData;
             this.isFiltered = false;
             this.currentPage = 1;
             
             this.updateDisplay();
             this.showToast(`Loaded ${this.allData.length} failure analysis records`, 'success');
-        } catch (error) {
-            this.showToast('Failed to load failure analysis', 'error');
-            console.error('Load error:', error);
-        } finally {
-            this.hideLoading();
+        } else {
+            this.allData = [];
+            this.filteredData = [];
+            this.updateDisplay();
+            this.showToast('No failure analysis data available', 'info');
         }
+    } catch (error) {
+        this.showToast('Failed to load failure analysis', 'error');
+        console.error('Load error:', error);
+        this.allData = [];
+        this.filteredData = [];
+        this.updateDisplay();
+    } finally {
+        this.hideLoading();
+    }
+}
+    
+async applyFilters() {
+    const filters = {
+        catchment: document.getElementById('catchmentFilter').value,
+        category: document.getElementById('categoryFilter').value,
+        start_date: document.getElementById('startDateFilter').value,
+        end_date: document.getElementById('endDateFilter').value,
+        severity: document.getElementById('severityFilter').value
+    };
+    
+    const hasFilters = Object.values(filters).some(v => v !== '');
+    
+    if (!hasFilters) {
+        this.loadAllFailures();
+        return;
     }
     
-    async applyFilters() {
-        const filters = {
-            catchment: document.getElementById('catchmentFilter').value,
-            category: document.getElementById('categoryFilter').value,
-            start_date: document.getElementById('startDateFilter').value,
-            end_date: document.getElementById('endDateFilter').value,
-            severity: document.getElementById('severityFilter').value
-        };
+    this.showLoading('Applying filters...');
+    try {
+        const params = new URLSearchParams();
+        if (filters.catchment) params.append('catchment', filters.catchment);
+        if (filters.category) params.append('category', filters.category);
+        if (filters.start_date) params.append('start_date', filters.start_date);
+        if (filters.end_date) params.append('end_date', filters.end_date);
         
-        const hasFilters = Object.values(filters).some(v => v !== '');
+        console.log('Applying filters with params:', params.toString());
         
-        if (!hasFilters) {
-            this.loadAllFailures();
-            return;
+        const response = await fetch(`${this.apiBase}/failure-analysis?${params}`);
+        const result = await response.json();
+        
+        console.log('Filter response:', result);
+        
+        // Use consistent field name
+        let filteredResults = result.failure_analysis || result.analysis || [];
+        
+        // Additional severity filter (client-side)
+        if (filters.severity) {
+            filteredResults = filteredResults.filter(record => {
+                const rate = record.failure_rate || 0;
+                if (filters.severity === 'Critical') return rate > 50;
+                if (filters.severity === 'High') return rate > 30 && rate <= 50;
+                if (filters.severity === 'Moderate') return rate > 15 && rate <= 30;
+                if (filters.severity === 'Low') return rate > 0 && rate <= 15;
+                if (filters.severity === 'None') return rate === 0;
+                return true;
+            });
         }
         
-        this.showLoading('Applying filters...');
-        try {
-            const params = new URLSearchParams();
-            if (filters.catchment) params.append('catchment', filters.catchment);
-            if (filters.category) params.append('category', filters.category);
-            if (filters.start_date) params.append('start_date', filters.start_date);
-            if (filters.end_date) params.append('end_date', filters.end_date);
-            
-            const response = await fetch(`${this.apiBase}/failure-analysis?${params}`);
-            const result = await response.json();
-            
-            this.filteredData = result.failure_analysis || [];
-            
-            if (filters.severity) {
-                this.filteredData = this.filteredData.filter(record => 
-                    record.severity_classification === filters.severity
-                );
-            }
-            
-            this.isFiltered = true;
-            this.currentPage = 1;
-            
-            this.updateActiveFilters(filters);
-            this.updateDisplay();
-            this.showToast(`Filtered to ${this.filteredData.length} records`, 'success');
-        } catch (error) {
-            this.showToast('Filter application failed', 'error');
-        } finally {
-            this.hideLoading();
-        }
+        this.filteredData = filteredResults;
+        this.isFiltered = true;
+        this.currentPage = 1;
+        
+        this.updateActiveFilters(filters);
+        this.updateDisplay();
+        this.showToast(`Filtered to ${this.filteredData.length} records`, 'success');
+    } catch (error) {
+        this.showToast('Filter application failed: ' + error.message, 'error');
+        console.error('Filter error:', error);
+    } finally {
+        this.hideLoading();
     }
+}
     
     updateActiveFilters(filters) {
         const container = document.getElementById('activeFiltersContainer');
@@ -380,10 +550,27 @@ async handleFileUpload(file) {
         this.loadAllFailures();
     }
     
-    toggleFilters() {
-        const panel = document.getElementById('filtersPanel');
-        panel.classList.toggle('hidden');
+toggleFilters() {
+    console.log('Toggle filters clicked');
+    const panel = document.getElementById('filtersPanel');
+    if (!panel) {
+        console.warn('Filter panel not found - check HTML has #filtersPanel element');
+        return;
     }
+    
+    console.log('Current hidden status:', panel.classList.contains('hidden'));
+    
+    // Toggle the hidden class
+    if (panel.classList.contains('hidden')) {
+        panel.classList.remove('hidden');
+        panel.style.display = 'block';
+    } else {
+        panel.classList.add('hidden');
+        panel.style.display = 'none';
+    }
+    
+    console.log('After toggle hidden status:', panel.classList.contains('hidden'));
+}
     
     updateDisplay() {
         this.updateSummaryCards();
@@ -412,53 +599,57 @@ async handleFileUpload(file) {
         document.getElementById('totalGWLevel').textContent = gwlevelRecords.toLocaleString();
     }
     
-    updateSummaryStatistics() {
-        const data = this.filteredData;
-        
-        if (data.length === 0) {
-            document.getElementById('summaryTotalRecords').textContent = '0';
-            document.getElementById('summaryTotalFailures').textContent = '0';
-            document.getElementById('summaryOverallRate').textContent = '0%';
-            document.getElementById('summaryPeriods').textContent = '0';
-            document.getElementById('baseflowRate').textContent = '0%';
-            document.getElementById('baseflowRecords').textContent = '0/0 records';
-            document.getElementById('gwlevelRate').textContent = '0%';
-            document.getElementById('gwlevelRecords').textContent = '0/0 records';
-            document.getElementById('rechargeRate').textContent = '0%';
-            document.getElementById('rechargeRecords').textContent = '0/0 records';
-            return;
-        }
-        
-        const totalRecords = data.reduce((sum, r) => sum + (r.total_records || 0), 0);
-        const totalFailures = data.reduce((sum, r) => sum + (r.total_failures || 0), 0);
-        const overallRate = totalRecords > 0 ? ((totalFailures / totalRecords) * 100).toFixed(1) : '0.0';
-        
-        document.getElementById('summaryTotalRecords').textContent = totalRecords.toLocaleString();
-        document.getElementById('summaryTotalFailures').textContent = totalFailures.toLocaleString();
-        document.getElementById('summaryOverallRate').textContent = overallRate + '%';
-        document.getElementById('summaryPeriods').textContent = data.length;
-        
-        const baseflowData = data.filter(r => r.category === 'BASEFLOW');
-        const baseflowTotal = baseflowData.reduce((sum, r) => sum + (r.total_records || 0), 0);
-        const baseflowFail = baseflowData.reduce((sum, r) => sum + (r.total_failures || 0), 0);
-        const baseflowRate = baseflowTotal > 0 ? ((baseflowFail / baseflowTotal) * 100).toFixed(1) : '0.0';
-        document.getElementById('baseflowRate').textContent = baseflowRate + '%';
-        document.getElementById('baseflowRecords').textContent = `${baseflowFail.toLocaleString()}/${baseflowTotal.toLocaleString()} records`;
-        
-        const gwlevelData = data.filter(r => r.category === 'GWLEVEL');
-        const gwlevelTotal = gwlevelData.reduce((sum, r) => sum + (r.total_records || 0), 0);
-        const gwlevelFail = gwlevelData.reduce((sum, r) => sum + (r.total_failures || 0), 0);
-        const gwlevelRate = gwlevelTotal > 0 ? ((gwlevelFail / gwlevelTotal) * 100).toFixed(1) : '0.0';
-        document.getElementById('gwlevelRate').textContent = gwlevelRate + '%';
-        document.getElementById('gwlevelRecords').textContent = `${gwlevelFail.toLocaleString()}/${gwlevelTotal.toLocaleString()} records`;
-        
-        const rechargeData = data.filter(r => r.category === 'RECHARGE');
-        const rechargeTotal = rechargeData.reduce((sum, r) => sum + (r.total_records || 0), 0);
-        const rechargeFail = rechargeData.reduce((sum, r) => sum + (r.total_failures || 0), 0);
-        const rechargeRate = rechargeTotal > 0 ? ((rechargeFail / rechargeTotal) * 100).toFixed(1) : '0.0';
-        document.getElementById('rechargeRate').textContent = rechargeRate + '%';
-        document.getElementById('rechargeRecords').textContent = `${rechargeFail.toLocaleString()}/${rechargeTotal.toLocaleString()} records`;
+updateSummaryStatistics() {
+    const data = this.filteredData;
+    
+    if (data.length === 0) {
+        document.getElementById('summaryTotalRecords').textContent = '0';
+        document.getElementById('summaryTotalFailures').textContent = '0';
+        document.getElementById('summaryOverallRate').textContent = '0%';
+        document.getElementById('summaryPeriods').textContent = '0';
+        document.getElementById('baseflowRate').textContent = '0%';
+        document.getElementById('baseflowRecords').textContent = '0/0 records';
+        document.getElementById('gwlevelRate').textContent = '0%';
+        document.getElementById('gwlevelRecords').textContent = '0/0 records';
+        document.getElementById('rechargeRate').textContent = '0%';
+        document.getElementById('rechargeRecords').textContent = '0/0 records';
+        return;
     }
+    
+    // Calculate totals from API response
+    const totalRecords = data.reduce((sum, r) => sum + (r.total || r.total_records || 0), 0);
+    const totalFailures = data.reduce((sum, r) => sum + (r.failures || r.total_failures || 0), 0);
+    const overallRate = totalRecords > 0 ? ((totalFailures / totalRecords) * 100).toFixed(1) : '0.0';
+    
+    console.log('Stats - Total:', totalRecords, 'Failures:', totalFailures, 'Rate:', overallRate);
+    
+    document.getElementById('summaryTotalRecords').textContent = totalRecords.toLocaleString();
+    document.getElementById('summaryTotalFailures').textContent = totalFailures.toLocaleString();
+    document.getElementById('summaryOverallRate').textContent = overallRate + '%';
+    document.getElementById('summaryPeriods').textContent = data.length;
+    
+    // By category - handle both parameter and category field names
+    const baseflowData = data.filter(r => (r.parameter || r.category || '').toUpperCase() === 'BASEFLOW');
+    const baseflowTotal = baseflowData.reduce((sum, r) => sum + (r.total || r.total_records || 0), 0);
+    const baseflowFail = baseflowData.reduce((sum, r) => sum + (r.failures || r.total_failures || 0), 0);
+    const baseflowRate = baseflowTotal > 0 ? ((baseflowFail / baseflowTotal) * 100).toFixed(1) : '0.0';
+    document.getElementById('baseflowRate').textContent = baseflowRate + '%';
+    document.getElementById('baseflowRecords').textContent = `${baseflowFail.toLocaleString()}/${baseflowTotal.toLocaleString()} records`;
+    
+    const gwlevelData = data.filter(r => (r.parameter || r.category || '').toUpperCase() === 'GWLEVEL');
+    const gwlevelTotal = gwlevelData.reduce((sum, r) => sum + (r.total || r.total_records || 0), 0);
+    const gwlevelFail = gwlevelData.reduce((sum, r) => sum + (r.failures || r.total_failures || 0), 0);
+    const gwlevelRate = gwlevelTotal > 0 ? ((gwlevelFail / gwlevelTotal) * 100).toFixed(1) : '0.0';
+    document.getElementById('gwlevelRate').textContent = gwlevelRate + '%';
+    document.getElementById('gwlevelRecords').textContent = `${gwlevelFail.toLocaleString()}/${gwlevelTotal.toLocaleString()} records`;
+    
+    const rechargeData = data.filter(r => (r.parameter || r.category || '').toUpperCase() === 'RECHARGE');
+    const rechargeTotal = rechargeData.reduce((sum, r) => sum + (r.total || r.total_records || 0), 0);
+    const rechargeFail = rechargeData.reduce((sum, r) => sum + (r.failures || r.total_failures || 0), 0);
+    const rechargeRate = rechargeTotal > 0 ? ((rechargeFail / rechargeTotal) * 100).toFixed(1) : '0.0';
+    document.getElementById('rechargeRate').textContent = rechargeRate + '%';
+    document.getElementById('rechargeRecords').textContent = `${rechargeFail.toLocaleString()}/${rechargeTotal.toLocaleString()} records`;
+}
     
     renderTable() {
         const container = document.getElementById('tableContainer');
@@ -483,12 +674,12 @@ async handleFileUpload(file) {
             <table class="w-full text-sm">
                 <thead class="bg-gray-50 sticky top-0">
                     <tr>
-                        <th class="px-4 py-3 text-left font-semibold">Date</th>
                         <th class="px-4 py-3 text-left font-semibold">Catchment</th>
                         <th class="px-4 py-3 text-left font-semibold">Parameter</th>
                         <th class="px-4 py-3 text-right font-semibold">Total Records</th>
                         <th class="px-4 py-3 text-right font-semibold">Failures</th>
                         <th class="px-4 py-3 text-right font-semibold">Failure Rate</th>
+                        <th class="px-4 py-3 text-right font-semibold">Avg Severity</th>
                         <th class="px-4 py-3 text-left font-semibold">Classification</th>
                         <th class="px-4 py-3 text-center font-semibold">Status</th>
                     </tr>
@@ -503,35 +694,52 @@ async handleFileUpload(file) {
         this.renderPagination();
     }
     
-    renderTableRow(row) {
-        const dateStr = `${row.month || ''}/${row.year || ''}`;
-        const classificationColor = this.getClassificationColor(row.severity_classification);
-        
-        return `
-            <tr class="hover:bg-gray-50">
-                <td class="px-4 py-3">${dateStr}</td>
-                <td class="px-4 py-3">${row.catchment_name || 'N/A'}</td>
-                <td class="px-4 py-3">${row.category || 'N/A'}</td>
-                <td class="px-4 py-3 text-right">${(row.total_records || 0).toLocaleString()}</td>
-                <td class="px-4 py-3 text-right font-medium">${(row.total_failures || 0).toLocaleString()}</td>
-                <td class="px-4 py-3 text-right">
-                    <span class="px-2 py-1 text-xs rounded ${this.getFailureRateClass(row.failure_rate)}">
-                        ${(row.failure_rate || 0).toFixed(1)}%
-                    </span>
-                </td>
-                <td class="px-4 py-3">
-                    <span class="px-2 py-1 text-xs rounded ${classificationColor}">
-                        ${row.severity_classification || 'None'}
-                    </span>
-                </td>
-                <td class="px-4 py-3 text-center">
-                    ${row.total_failures > 0 ? 
-                        '<span class="text-red-600"><i class="fas fa-exclamation-circle"></i></span>' : 
-                        '<span class="text-green-600"><i class="fas fa-check-circle"></i></span>'}
-                </td>
-            </tr>
-        `;
-    }
+renderTableRow(row) {
+    const failureRate = (row.failure_rate || 0);
+    const avgSeverity = row.avg_severity || 0;
+
+    return `
+        <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3">${row.catchment || 'N/A'}</td>
+            <td class="px-4 py-3">
+                <span class="px-2 py-1 text-xs rounded ${this.getCategoryBadgeClass((row.parameter || row.category || '').toUpperCase())}">
+                    ${row.parameter || row.category || 'N/A'}
+                </span>
+            </td>
+            <td class="px-4 py-3 text-right">${(row.total || row.total_records || 0).toLocaleString()}</td>
+            <td class="px-4 py-3 text-right font-medium">${(row.failures || row.total_failures || 0).toLocaleString()}</td>
+            <td class="px-4 py-3 text-right">
+                <span class="px-2 py-1 text-xs rounded ${this.getFailureRateClass(failureRate)}">
+                    ${failureRate.toFixed(1)}%
+                </span>
+            </td>
+            <td class="px-4 py-3 text-right">
+                <span class="px-2 py-1 text-xs rounded ${this.getSeverityClass(avgSeverity)}">
+                    ${avgSeverity.toFixed(2)}
+                </span>
+            </td>
+            <td class="px-4 py-3">
+                <span class="px-2 py-1 text-xs rounded ${this.getSeverityClass(failureRate)}">
+                    ${failureRate > 50 ? 'Critical' : failureRate > 30 ? 'High' : failureRate > 15 ? 'Moderate' : failureRate > 0 ? 'Low' : 'None'}
+                </span>
+            </td>
+            <td class="px-4 py-3 text-center">
+                ${row.failures > 0 || failureRate > 0 ?
+                    '<span class="text-red-600"><i class="fas fa-exclamation-circle"></i></span>' :
+                    '<span class="text-green-600"><i class="fas fa-check-circle"></i></span>'}
+            </td>
+        </tr>
+    `;
+}
+
+// Add helper method for severity class
+getSeverityClass(failureRate) {
+    if (failureRate > 50) return 'bg-red-100 text-red-800';
+    if (failureRate > 30) return 'bg-orange-100 text-orange-800';
+    if (failureRate > 15) return 'bg-yellow-100 text-yellow-800';
+    if (failureRate > 0) return 'bg-blue-100 text-blue-800';
+    return 'bg-green-100 text-green-800';
+}
     
     getClassificationColor(classification) {
         const colors = {
@@ -675,7 +883,8 @@ async handleFileUpload(file) {
             this.hideLoading();
         }
     }
-    
+
+    // PDF EXPORT FEATURE
     async exportPDF() {
         this.showToast('PDF export feature coming soon', 'info');
     }
@@ -689,61 +898,65 @@ async handleFileUpload(file) {
         };
     }
     
-    showLoading(text) {
-        document.getElementById('loadingText').textContent = text;
-        document.getElementById('loadingOverlay').classList.remove('hidden');
-        document.getElementById('loadingOverlay').classList.add('flex');
+showLoading(message = 'Loading...') {
+    const overlay = document.getElementById('loadingOverlay');
+    const text = document.getElementById('loadingText');
+    if (overlay && text) {
+        text.textContent = message;
+        overlay.classList.remove('hidden');
+        overlay.classList.add('flex');
     }
+}
     
     hideLoading() {
-        document.getElementById('loadingOverlay').classList.add('hidden');
-        document.getElementById('loadingOverlay').classList.remove('flex');
+        const overlay = document.getElementById('loadingOverlay');
+        if (overlay) {
+            overlay.classList.add('hidden');
+            overlay.classList.remove('flex');
+        }
     }
-    
-   showToast(message, type = 'info') {
+
+showToast(message, type = 'info') {
     const container = document.getElementById('toastContainer');
-    const colors = {
-        success: 'bg-green-500',
-        error: 'bg-red-500',
-        warning: 'bg-yellow-500',
-        info: 'bg-blue-500'
-    };
-    
-    const icons = {
-        success: 'fa-check-circle',
-        error: 'fa-exclamation-circle',
-        warning: 'fa-exclamation-triangle',
-        info: 'fa-info-circle'
-    };
-    
-    // Handle multiline messages
-    const formattedMessage = message.replace(/\n/g, '<br>');
+    if (!container) return;
     
     const toast = document.createElement('div');
-    toast.className = `${colors[type]} text-white px-6 py-4 rounded-lg shadow-lg flex items-start justify-between min-w-[300px] max-w-[500px] transform transition-all duration-300 translate-x-full`;
+    toast.className = `px-6 py-4 rounded-lg shadow-lg text-white animate-slide-down ${
+        type === 'success' ? 'bg-green-600' :
+        type === 'error' ? 'bg-red-600' :
+        type === 'warning' ? 'bg-yellow-600' :
+        'bg-blue-600'
+    }`;
+    
     toast.innerHTML = `
-        <div class="flex items-start flex-1">
-            <i class="fas ${icons[type]} mr-3 mt-1"></i>
-            <div class="text-sm font-medium leading-relaxed">${formattedMessage}</div>
+        <div class="flex items-center">
+            <i class="fas fa-${
+                type === 'success' ? 'check-circle' :
+                type === 'error' ? 'exclamation-circle' :
+                type === 'warning' ? 'exclamation-triangle' :
+                'info-circle'
+            } mr-3"></i>
+            <span>${message}</span>
         </div>
-        <button onclick="this.parentElement.remove()" class="ml-4 text-white hover:text-gray-200 flex-shrink-0">
-            <i class="fas fa-times"></i>
-        </button>
     `;
     
     container.appendChild(toast);
-    setTimeout(() => toast.classList.remove('translate-x-full'), 100);
     
-    // Longer timeout for error messages (10 seconds)
-    const timeout = type === 'error' ? 10000 : 5000;
     setTimeout(() => {
-        if (toast.parentElement) {
-            toast.classList.add('translate-x-full');
-            setTimeout(() => toast.remove(), 300);
-        }
-    }, timeout);
+        toast.style.opacity = '0';
+        toast.style.transform = 'translateX(100%)';
+        toast.style.transition = 'all 0.3s ease-out';
+        setTimeout(() => toast.remove(), 300);
+    }, 5000);
 }
+
+
+
 }
+
+
+
+
 
 // Initialize the dashboard
 let app;
