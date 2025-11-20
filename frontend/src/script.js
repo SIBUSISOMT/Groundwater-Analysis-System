@@ -1284,7 +1284,16 @@ async loadMetrics(filters) {
             const mappedParam = paramMap[filters.parameter] || filters.parameter.toLowerCase();
             params.append('parameter', mappedParam);
         }
-        
+
+        // Add date filters
+        if (filters.start_date) {
+            params.append('start_date', filters.start_date);
+        }
+
+        if (filters.end_date) {
+            params.append('end_date', filters.end_date);
+        }
+
         const response = await this.makeApiRequest(`/metrics?${params}`);
         const result = await response.json();
         
@@ -1444,17 +1453,15 @@ async loadFailureAnalysis(filters) {
         if (filters.catchment) params.append('catchment', filters.catchment);
         if (filters.start_date) params.append('start_date', filters.start_date);
         if (filters.end_date) params.append('end_date', filters.end_date);
-        
+
         if (filters.parameter) {
-            const categoryMap = {
+            const paramMap = {
                 'RECHARGE': 'recharge',
                 'GWL': 'gwlevel',
                 'BASEFLOW': 'baseflow'
             };
-            const category = categoryMap[filters.parameter];
-            if (category) {
-                params.append('category', category);
-            }
+            const mappedParam = paramMap[filters.parameter] || filters.parameter.toLowerCase();
+            params.append('category', mappedParam);  // Backend expects 'category' for failure-analysis
         }
         
         const response = await this.makeApiRequest(`/failure-analysis?${params}`);
@@ -3131,4 +3138,29 @@ window.addEventListener('unhandledrejection', (event) => {
     event.preventDefault();
 });
 
+// Image Modal Functions
+function openImageModal() {
+    const modal = document.getElementById('imageModal');
+    modal.classList.add('active');
+    document.body.style.overflow = 'hidden'; // Prevent background scrolling
+}
+
+function closeImageModal(event) {
+    // Only close if clicking on the backdrop or close button
+    if (!event || event.target.id === 'imageModal' || event.target.closest('.image-modal-close')) {
+        const modal = document.getElementById('imageModal');
+        modal.classList.remove('active');
+        document.body.style.overflow = ''; // Restore scrolling
+    }
+}
+
+// Close modal on Escape key press
+document.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        const modal = document.getElementById('imageModal');
+        if (modal.classList.contains('active')) {
+            closeImageModal();
+        }
+    }
+});
 

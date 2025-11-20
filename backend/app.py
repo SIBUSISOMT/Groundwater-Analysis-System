@@ -1264,13 +1264,15 @@ def handle_source(source_id):
 
 @app.route('/api/failure-analysis', methods=['GET'])
 def get_failure_analysis():
-    """Get failure analysis with proper filtering - FIXED"""
+    """Get failure analysis with proper filtering - FIXED with DATE support"""
     try:
         # Accept both 'category' and 'parameter' (frontend sends 'category')
         catchment = request.args.get('catchment')
         category = request.args.get('category')  # What frontend sends
         parameter = request.args.get('parameter')  # Alternative name
-        
+        start_date = request.args.get('start_date')  # ✅ DATE FILTER SUPPORT
+        end_date = request.args.get('end_date')      # ✅ DATE FILTER SUPPORT
+
         # Use whichever one was provided
         param_filter = category or parameter
         
@@ -1300,7 +1302,18 @@ def get_failure_analysis():
         if param_filter:
             query += " AND LOWER(pd.parameter_type) = ?"
             params.append(param_filter.lower())
-        
+
+        # ✅ NEW: Add date range filters
+        if start_date:
+            query += " AND CAST(pd.measurement_date AS DATE) >= CAST(? AS DATE)"
+            params.append(start_date)
+            logger.info(f"[FILTER] Adding start_date filter: {start_date}")
+
+        if end_date:
+            query += " AND CAST(pd.measurement_date AS DATE) <= CAST(? AS DATE)"
+            params.append(end_date)
+            logger.info(f"[FILTER] Adding end_date filter: {end_date}")
+
         query += " GROUP BY c.catchment_name, pd.parameter_type ORDER BY failure_rate DESC"
         
         print(f"[DEBUG] Query: {query}")
@@ -1342,7 +1355,16 @@ def get_failure_analysis():
         if param_filter:
             overall_query += " AND LOWER(parameter_type) = ?"
             overall_params.append(param_filter.lower())
-        
+
+        # ✅ NEW: Add date range filters to overall stats too
+        if start_date:
+            overall_query += " AND CAST(measurement_date AS DATE) >= CAST(? AS DATE)"
+            overall_params.append(start_date)
+
+        if end_date:
+            overall_query += " AND CAST(measurement_date AS DATE) <= CAST(? AS DATE)"
+            overall_params.append(end_date)
+
         overall_results = db.execute_query(overall_query, overall_params if overall_params else None)
         
         overall_stats = {}
@@ -1407,15 +1429,17 @@ def get_metrics():
         catchment = request.args.get('catchment')
         parameter = request.args.get('parameter')
         parameter_type = request.args.get('parameter_type')
-        
+        start_date = request.args.get('start_date')  # ✅ DATE FILTER SUPPORT
+        end_date = request.args.get('end_date')      # ✅ DATE FILTER SUPPORT
+
         # ✅ NEW: Handle aggregation flag
         aggregate = request.args.get('aggregate', 'false').lower() == 'true'
-        
+
         # Use whichever parameter name was provided
         if not parameter and parameter_type:
             parameter = parameter_type
-        
-        logger.info(f"[METRICS] Request - catchment={catchment}, parameter={parameter}, aggregate={aggregate}")
+
+        logger.info(f"[METRICS] Request - catchment={catchment}, parameter={parameter}, aggregate={aggregate}, dates={start_date} to {end_date}")
         
         # ============================================================================
         # ✅ NEW: If aggregation requested, return single OVERALL metric
@@ -1424,35 +1448,68 @@ def get_metrics():
             logger.info("[METRICS] Returning AGGREGATED metrics")
             
             query = """
-            SELECT 
+            SELECT
                 'OVERALL' as catchment,
                 'ALL' as parameter,
                 COUNT(*) as total_records,
-                
+
                 -- RELIABILITY: % of time satisfactory (z-score >= -0.5)
-                CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) / 
+                -- Values: 0-1 (0% to 100%)
+                CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) /
                 NULLIF(COUNT(*), 0) as reliability,
-                
-                -- RESILIENCE: Recovery speed (inverse of avg severity, 0-1 scale)
-                CASE 
-                    WHEN AVG(CAST(pd.severity_level AS FLOAT)) IS NULL THEN 0.5
-                    ELSE 1.0 - (AVG(CAST(pd.severity_level AS FLOAT)) / 3.0)
+
+                -- RESILIENCE: Recovery speed based on failure severity (FAILURES ONLY)
+                -- Calculated as the inverse of average severity during failures
+                -- Higher severity = longer recovery time = lower resilience
+                -- Scale: 0-1, where severity levels: 1=Moderate, 2=Severe, 3=Extreme
+                -- If no failures exist, resilience = 1.0 (perfect)
+                CASE
+                    WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 1.0
+                    ELSE 1.0 - (AVG(CASE
+                        WHEN pd.is_failure = 1 THEN CAST(pd.severity_level AS FLOAT)
+                        ELSE NULL
+                    END) / 3.0)
                 END as resilience,
-                
-                -- VULNERABILITY: Average severity as percentage (0-1)
-                CASE 
-                    WHEN AVG(CAST(pd.severity_level AS FLOAT)) IS NULL THEN 0
-                    ELSE AVG(CAST(pd.severity_level AS FLOAT)) / 3.0
+
+                -- VULNERABILITY: Mean absolute deviation during failures ONLY
+                -- Based on reference: mean(abs(z_score)) for failure records only
+                -- Normalized to 0-1 scale by dividing by reasonable max (e.g., 3 std devs)
+                CASE
+                    WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
+                    ELSE AVG(CASE
+                        WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
+                        ELSE NULL
+                    END) / 3.0
                 END as vulnerability,
-                
-                -- SUSTAINABILITY: Combined metric = Reliability * Resilience * (1 - Vulnerability)
-                CASE 
+
+                -- SUSTAINABILITY: Weighted average formula (ISI)
+                -- ISI = (w_r*R + w_s*S + w_v*(1-V)) / (w_r + w_s + w_v)
+                -- Using equal weights (w_r=1, w_s=1, w_v=1)
+                CASE
                     WHEN COUNT(*) = 0 THEN 0
-                    ELSE (CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) *
-                         (1.0 - (AVG(CAST(pd.severity_level AS FLOAT)) / 3.0)) *
-                         (1.0 - (AVG(CAST(pd.severity_level AS FLOAT)) / 3.0))
+                    ELSE
+                        (
+                            -- Reliability component (w_r=1)
+                            (CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) +
+                            -- Resilience component (w_s=1) - only considers failures
+                            CASE
+                                WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 1.0
+                                ELSE 1.0 - (AVG(CASE
+                                    WHEN pd.is_failure = 1 THEN CAST(pd.severity_level AS FLOAT)
+                                    ELSE NULL
+                                END) / 3.0)
+                            END +
+                            -- Robustness component (w_v=1): (1 - Vulnerability)
+                            (1.0 - CASE
+                                WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
+                                ELSE AVG(CASE
+                                    WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
+                                    ELSE NULL
+                                END) / 3.0
+                            END)
+                        ) / 3.0  -- Divide by sum of weights (1+1+1=3)
                 END as sustainability
-                
+
             FROM dbo.ProcessedData pd
             JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
             WHERE 1=1
@@ -1465,11 +1522,22 @@ def get_metrics():
                 query += " AND LOWER(c.catchment_name) = LOWER(?)"
                 params.append(catchment)
                 logger.info(f"[METRICS] Adding catchment filter: {catchment}")
-            
+
             if parameter:
                 query += " AND LOWER(pd.parameter_type) = LOWER(?)"
                 params.append(parameter)
                 logger.info(f"[METRICS] Adding parameter filter: {parameter}")
+
+            # ✅ NEW: Add date range filters
+            if start_date:
+                query += " AND CAST(pd.measurement_date AS DATE) >= CAST(? AS DATE)"
+                params.append(start_date)
+                logger.info(f"[METRICS] Adding start_date filter: {start_date}")
+
+            if end_date:
+                query += " AND CAST(pd.measurement_date AS DATE) <= CAST(? AS DATE)"
+                params.append(end_date)
+                logger.info(f"[METRICS] Adding end_date filter: {end_date}")
         
         # ============================================================================
         # EXISTING: Per-catchment-parameter breakdown (when aggregate=false)
@@ -1478,35 +1546,68 @@ def get_metrics():
             logger.info("[METRICS] Returning PER-CATCHMENT-PARAMETER metrics")
             
             query = """
-            SELECT 
+            SELECT
                 c.catchment_name,
                 pd.parameter_type,
                 COUNT(*) as total_records,
-                
+
                 -- RELIABILITY: % of time satisfactory (z-score >= -0.5)
-                CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) / 
+                -- Values: 0-1 (0% to 100%)
+                CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) /
                 NULLIF(COUNT(*), 0) as reliability,
-                
-                -- RESILIENCE: Recovery speed (inverse of avg severity, 0-1 scale)
-                CASE 
-                    WHEN AVG(CAST(pd.severity_level AS FLOAT)) IS NULL THEN 0.5
-                    ELSE 1.0 - (AVG(CAST(pd.severity_level AS FLOAT)) / 3.0)
+
+                -- RESILIENCE: Recovery speed based on failure severity (FAILURES ONLY)
+                -- Calculated as the inverse of average severity during failures
+                -- Higher severity = longer recovery time = lower resilience
+                -- Scale: 0-1, where severity levels: 1=Moderate, 2=Severe, 3=Extreme
+                -- If no failures exist, resilience = 1.0 (perfect)
+                CASE
+                    WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 1.0
+                    ELSE 1.0 - (AVG(CASE
+                        WHEN pd.is_failure = 1 THEN CAST(pd.severity_level AS FLOAT)
+                        ELSE NULL
+                    END) / 3.0)
                 END as resilience,
-                
-                -- VULNERABILITY: Average severity as percentage (0-1)
-                CASE 
-                    WHEN AVG(CAST(pd.severity_level AS FLOAT)) IS NULL THEN 0
-                    ELSE AVG(CAST(pd.severity_level AS FLOAT)) / 3.0
+
+                -- VULNERABILITY: Mean absolute deviation during failures ONLY
+                -- Based on reference: mean(abs(z_score)) for failure records only
+                -- Normalized to 0-1 scale by dividing by reasonable max (e.g., 3 std devs)
+                CASE
+                    WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
+                    ELSE AVG(CASE
+                        WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
+                        ELSE NULL
+                    END) / 3.0
                 END as vulnerability,
-                
-                -- SUSTAINABILITY: Combined metric = Reliability * Resilience * (1 - Vulnerability)
-                CASE 
+
+                -- SUSTAINABILITY: Weighted average formula (ISI)
+                -- ISI = (w_r*R + w_s*S + w_v*(1-V)) / (w_r + w_s + w_v)
+                -- Using equal weights (w_r=1, w_s=1, w_v=1)
+                CASE
                     WHEN COUNT(*) = 0 THEN 0
-                    ELSE (CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) *
-                         (1.0 - (AVG(CAST(pd.severity_level AS FLOAT)) / 3.0)) *
-                         (1.0 - (AVG(CAST(pd.severity_level AS FLOAT)) / 3.0))
+                    ELSE
+                        (
+                            -- Reliability component (w_r=1)
+                            (CAST(SUM(CASE WHEN pd.standardized_value >= -0.5 THEN 1 ELSE 0 END) AS FLOAT) / COUNT(*)) +
+                            -- Resilience component (w_s=1) - only considers failures
+                            CASE
+                                WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 1.0
+                                ELSE 1.0 - (AVG(CASE
+                                    WHEN pd.is_failure = 1 THEN CAST(pd.severity_level AS FLOAT)
+                                    ELSE NULL
+                                END) / 3.0)
+                            END +
+                            -- Robustness component (w_v=1): (1 - Vulnerability)
+                            (1.0 - CASE
+                                WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
+                                ELSE AVG(CASE
+                                    WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
+                                    ELSE NULL
+                                END) / 3.0
+                            END)
+                        ) / 3.0  -- Divide by sum of weights (1+1+1=3)
                 END as sustainability
-                
+
             FROM dbo.ProcessedData pd
             JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
             WHERE 1=1
@@ -1518,12 +1619,23 @@ def get_metrics():
                 query += " AND LOWER(c.catchment_name) = LOWER(?)"
                 params.append(catchment)
                 logger.info(f"[METRICS] Adding catchment filter: {catchment}")
-            
+
             if parameter:
                 query += " AND LOWER(pd.parameter_type) = LOWER(?)"
                 params.append(parameter)
                 logger.info(f"[METRICS] Adding parameter filter: {parameter}")
-            
+
+            # ✅ NEW: Add date range filters
+            if start_date:
+                query += " AND CAST(pd.measurement_date AS DATE) >= CAST(? AS DATE)"
+                params.append(start_date)
+                logger.info(f"[METRICS] Adding start_date filter: {start_date}")
+
+            if end_date:
+                query += " AND CAST(pd.measurement_date AS DATE) <= CAST(? AS DATE)"
+                params.append(end_date)
+                logger.info(f"[METRICS] Adding end_date filter: {end_date}")
+
             query += " GROUP BY c.catchment_name, pd.parameter_type"
         
         # Execute query

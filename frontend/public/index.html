@@ -13,7 +13,7 @@
        
         .user-message {
             background: #3b82f6;
-            color: white;
+            color: rgb(62, 58, 58);
             margin-left: 20%;
             margin-right: 8px;
         }
@@ -271,6 +271,166 @@
             margin-top: 24px;
             margin-bottom: 8px;
         }
+
+        /* Sidebar Image Styling */
+        .sidebar-image-container {
+            position: relative;
+            background: linear-gradient(135deg, rgba(59, 130, 246, 0.1) 0%, rgba(139, 92, 246, 0.1) 100%);
+            border: 2px solid rgba(59, 130, 246, 0.2);
+            transition: all 0.3s ease;
+        }
+
+        .sidebar-image-container:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(59, 130, 246, 0.3);
+            border-color: rgba(59, 130, 246, 0.4);
+        }
+
+        .sidebar-image-container img {
+            display: block;
+            width: 100%;
+            height: auto;
+            transition: transform 0.3s ease;
+        }
+
+        .sidebar-image-container:hover img {
+            transform: scale(1.02);
+        }
+
+        /* Main Content Background GIF Styling */
+        .main-content-wrapper {
+            position: relative;
+            min-height: 100vh;
+        }
+
+        .main-content-wrapper::before {
+            content: '';
+            position: fixed;
+            top: 0;
+            left: 256px; /* Account for sidebar width */
+            right: 0;
+            bottom: 0;
+            background-image: url('/frontend/src/images/nice_droplets.gif');
+            background-size: cover;
+            background-position: center;
+            background-repeat: no-repeat;
+            background-attachment: fixed;
+            opacity: 0.20; 
+            z-index: 0;
+            pointer-events: none; 
+        }
+
+        .main-content-wrapper > * {
+            position: relative;
+            z-index: 1; /* Ensures content stays above background */
+        }
+
+        /* Optional: Add subtle overlay for better readability */
+        .content-overlay {
+            position: relative;
+            background: rgba(255, 255, 255, 0.85); /* Semi-transparent white overlay */
+            backdrop-filter: blur(0.5px); /* Slight blur for glassmorphism effect */
+        }
+
+        /* Image Modal Styles */
+        .image-modal {
+            position: fixed;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(0, 0, 0, 0.9);
+            z-index: 9999;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            opacity: 0;
+            visibility: hidden;
+            transition: opacity 0.3s ease, visibility 0.3s ease;
+        }
+
+        .image-modal.active {
+            opacity: 1;
+            visibility: visible;
+        }
+
+        .image-modal-content {
+            position: relative;
+            max-width: 90%;
+            max-height: 90vh;
+            animation: modalZoomIn 0.3s ease;
+        }
+
+        @keyframes modalZoomIn {
+            from {
+                transform: scale(0.8);
+                opacity: 0;
+            }
+            to {
+                transform: scale(1);
+                opacity: 1;
+            }
+        }
+
+        .image-modal img {
+            max-width: 100%;
+            max-height: 90vh;
+            object-fit: contain;
+            border-radius: 8px;
+            box-shadow: 0 25px 50px rgba(0, 0, 0, 0.5);
+        }
+
+        .image-modal-close {
+            position: absolute;
+            top: -40px;
+            right: 0;
+            background: rgba(255, 255, 255, 0.1);
+            border: 2px solid rgba(255, 255, 255, 0.3);
+            color: white;
+            width: 36px;
+            height: 36px;
+            border-radius: 50%;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            cursor: pointer;
+            transition: all 0.3s ease;
+            font-size: 20px;
+            backdrop-filter: blur(10px);
+        }
+
+        .image-modal-close:hover {
+            background: rgba(255, 255, 255, 0.2);
+            transform: rotate(90deg);
+            border-color: rgba(255, 255, 255, 0.5);
+        }
+
+        .sidebar-image-container {
+            cursor: pointer;
+        }
+
+        .sidebar-image-container::after {
+            content: '\f002'; /* Font Awesome search/zoom icon */
+            font-family: 'Font Awesome 6 Free';
+            font-weight: 900;
+            position: absolute;
+            top: 50%;
+            left: 50%;
+            transform: translate(-50%, -50%);
+            font-size: 48px;
+            color: white;
+            opacity: 0;
+            transition: opacity 0.3s ease;
+            pointer-events: none;
+        }
+
+        .sidebar-image-container:hover::after {
+            opacity: 0.8;
+        }
+
+        .sidebar-image-container:hover img {
+            filter: brightness(0.7);
+        }
     </style>
 </head>
 <body class="bg-gray-50 font-sans">
@@ -339,7 +499,7 @@
                     <span>Data Upload</span>
                 </a> -->
                 
-               <a 
+               <a
                     class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-400 cursor-default select-none pointer-events-none"
                     aria-readonly="true"
                     >
@@ -347,16 +507,28 @@
                     <span>Sibusiso Mathonsi</span>
                     </a>
 
-                
-                
+
+
             </div>
-   
+
+            <!-- Sidebar Image Section -->
+            <div class="px-4 mt-6">
+                <div class="sidebar-image-container rounded-lg overflow-hidden shadow-lg" onclick="openImageModal()">
+                    <img
+                        src="/frontend/src/images/Image_of_Authors.jpg"
+                        alt="Groundwater System Illustration"
+                        class="w-full h-auto object-cover"
+                        style="max-height: 300px;"
+                    />
+                </div>
+            </div>
+
         </nav>
     </div>
     
     <!-- Main Content -->
-    <div class="ml-64 min-h-screen">
-        <!-- ENHANCED HEADER -->
+    <div class="ml-64 main-content-wrapper">
+    
         <header class="enhanced-header sticky top-0 z-20">
             <div class="px-6 py-4">
                 <div class="flex items-center justify-between">
@@ -883,10 +1055,20 @@
             </div>
 
         </div>
-        
+
     </div>
 </div>
-          
+
+    <!-- Image Modal -->
+    <div id="imageModal" class="image-modal" onclick="closeImageModal(event)">
+        <div class="image-modal-content" onclick="event.stopPropagation()">
+            <button class="image-modal-close" onclick="closeImageModal()" title="Close (Esc)">
+                <i class="fas fa-times"></i>
+            </button>
+            <img src="/frontend/src/images/Image_of_Authors.jpg" alt="Authors - Full View" />
+        </div>
+    </div>
+
     <script src="/frontend/src/script.js"></script>
 </body>
 </html>
