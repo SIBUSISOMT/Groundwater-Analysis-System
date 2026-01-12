@@ -30,9 +30,6 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
-# ==============================================================================
-# UNIFIED ERROR RESPONSE CLASS - ADD THIS
-# ==============================================================================
 
 class APIResponse:
     """Unified API response handler - use this for ALL responses"""
@@ -899,8 +896,8 @@ def get_data():
             logger.info(f"[DATA] Added catchment filter: {catchment}")
         
         if parameter:
-            query += " AND pd.parameter_type = ?"
-            params.append(parameter)
+            query += " AND LOWER(pd.parameter_type) = ?"
+            params.append(parameter.lower())
             logger.info(f"[DATA] Added parameter filter: {parameter}")
         
         if start_date:
@@ -1473,13 +1470,16 @@ def get_metrics():
 
                 -- VULNERABILITY: Mean absolute deviation during failures ONLY
                 -- Based on reference: mean(abs(z_score)) for failure records only
-                -- Normalized to 0-1 scale by dividing by reasonable max (e.g., 3 std devs)
+                -- Normalized to 0-1 scale by dividing by 6.0 (handles extreme z-scores)
+                -- Capped at 1.0 (100%) to prevent overflow in sustainability calculation
                 CASE
                     WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
-                    ELSE AVG(CASE
-                        WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
-                        ELSE NULL
-                    END) / 3.0
+                    ELSE
+                        CASE
+                            WHEN AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0 > 1.0
+                            THEN 1.0
+                            ELSE AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0
+                        END
                 END as vulnerability,
 
                 -- SUSTAINABILITY: Weighted average formula (ISI)
@@ -1500,12 +1500,15 @@ def get_metrics():
                                 END) / 3.0)
                             END +
                             -- Robustness component (w_v=1): (1 - Vulnerability)
+                            -- Vulnerability is capped at 1.0 to prevent negative sustainability
                             (1.0 - CASE
                                 WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
-                                ELSE AVG(CASE
-                                    WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
-                                    ELSE NULL
-                                END) / 3.0
+                                ELSE
+                                    CASE
+                                        WHEN AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0 > 1.0
+                                        THEN 1.0
+                                        ELSE AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0
+                                    END
                             END)
                         ) / 3.0  -- Divide by sum of weights (1+1+1=3)
                 END as sustainability
@@ -1571,13 +1574,16 @@ def get_metrics():
 
                 -- VULNERABILITY: Mean absolute deviation during failures ONLY
                 -- Based on reference: mean(abs(z_score)) for failure records only
-                -- Normalized to 0-1 scale by dividing by reasonable max (e.g., 3 std devs)
+                -- Normalized to 0-1 scale by dividing by 6.0 (handles extreme z-scores)
+                -- Capped at 1.0 (100%) to prevent overflow in sustainability calculation
                 CASE
                     WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
-                    ELSE AVG(CASE
-                        WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
-                        ELSE NULL
-                    END) / 3.0
+                    ELSE
+                        CASE
+                            WHEN AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0 > 1.0
+                            THEN 1.0
+                            ELSE AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0
+                        END
                 END as vulnerability,
 
                 -- SUSTAINABILITY: Weighted average formula (ISI)
@@ -1598,12 +1604,15 @@ def get_metrics():
                                 END) / 3.0)
                             END +
                             -- Robustness component (w_v=1): (1 - Vulnerability)
+                            -- Vulnerability is capped at 1.0 to prevent negative sustainability
                             (1.0 - CASE
                                 WHEN SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) = 0 THEN 0
-                                ELSE AVG(CASE
-                                    WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT))
-                                    ELSE NULL
-                                END) / 3.0
+                                ELSE
+                                    CASE
+                                        WHEN AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0 > 1.0
+                                        THEN 1.0
+                                        ELSE AVG(CASE WHEN pd.is_failure = 1 THEN ABS(CAST(pd.standardized_value AS FLOAT)) ELSE NULL END) / 6.0
+                                    END
                             END)
                         ) / 3.0  -- Divide by sum of weights (1+1+1=3)
                 END as sustainability
@@ -1893,4 +1902,7 @@ def internal_error(e):
 if __name__ == '__main__':
     logger.info("Starting Groundwater Analysis Backend")
     logger.info(f"Database: {DB_CONFIG['database']} @ {DB_CONFIG['server']}")
-    app.run(debug=True, host='0.0.0.0', port=5000)
+
+    # Use environment variable for debug mode (defaults to False for production)
+    debug_mode = os.getenv('FLASK_DEBUG', 'False').lower() == 'true'
+    app.run(debug=debug_mode, host='0.0.0.0', port=5000)

@@ -291,12 +291,12 @@ BEGIN
         original_value, mean_value, std_deviation, standardized_value,
         parameter_deviation, drought_index, classification, is_failure, severity_level
     )
-    SELECT 
+    SELECT
         rd.raw_id,
         rd.source_id,
         rd.catchment_id,
         rd.measurement_date,
-        rd.category as parameter_type,
+        LOWER(rd.category) as parameter_type,
         
         CASE 
             WHEN LOWER(rd.category) = 'recharge' THEN rd.recharge_converted
