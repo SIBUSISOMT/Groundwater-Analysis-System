@@ -231,31 +231,6 @@ setupPaginationHandlers() {
     };
 }
  
-    async init() {
-        if (this.initialized) return;
-        
-        try {
-            this.diagnostics.log('Initializing AI-enhanced system', 'info');
-            this.setupEventListeners();
-            
-            const apiAvailable = await this.testApiConnectivity();
-            
-            if (apiAvailable) {
-                await this.loadInitialData();
-                this.initializeCharts();
-                this.diagnostics.log('AI system ready', 'good');
-                this.showMessage('AI-Enhanced Groundwater Analysis System initialized successfully', 'success');
-            } else {
-                this.diagnostics.log('API server not responding', 'bad');
-                this.showMessage('Backend server not responding. Please check if the server is running.', 'error');
-            }
-            
-            this.initialized = true;
-        } catch (error) {
-            this.diagnostics.log(`Initialization failed: ${error.message}`, 'bad');
-            this.showMessage('System initialization failed', 'error');
-        }
-    }
     // Add these methods to your AIEnhancedGroundwaterSystem class in script.js
 
 showMetricsGuide() {
@@ -315,11 +290,7 @@ async init() {
         
         if (apiAvailable) {
             await this.loadInitialData();
-            this.initializeCharts();
-            
-            // NEW: Load and display ALL data on first load
-            await this.loadAndDisplayInitialCharts();
-            
+
             this.diagnostics.log('AI system ready', 'good');
             this.showMessage('AI-Enhanced Groundwater Analysis System initialized successfully', 'success');
         } else {
@@ -527,8 +498,9 @@ async loadInitialData() {
                 };
                 
                 this.updateCharts();
-                await this.loadMetrics({});  // Load overall metrics
-                
+                await this.loadMetrics({});
+                await this.loadFailureAnalysis({});
+
                 const totalRecords = combinedData.length;
                 const parameterBreakdown = Object.entries(parameterData)
                     .map(([param, data]) => `${param}: ${data.length}`)
@@ -1329,26 +1301,19 @@ async loadMetrics(filters) {
         const vulnerability = (avgMetrics.vulnerability / count);
         const sustainability = (avgMetrics.sustainability / count);
         
-        // ✅ IMPROVED: Update metrics only if data exists
-        const reliabilityEl = document.getElementById('reliabilityMetric');
-        if (reliabilityEl) {
-            reliabilityEl.textContent = isNaN(reliability) ? '-' : `${(reliability * 100).toFixed(1)}%`;
-        }
-        
-        const resilienceEl = document.getElementById('resilienceMetric');
-        if (resilienceEl) {
-            resilienceEl.textContent = isNaN(resilience) ? '-' : resilience.toFixed(3);
-        }
-        
-        const vulnerabilityEl = document.getElementById('vulnerabilityMetric');
-        if (vulnerabilityEl) {
-            vulnerabilityEl.textContent = isNaN(vulnerability) ? '-' : `${(vulnerability * 100).toFixed(1)}%`;
-        }
-        
-        const sustainabilityEl = document.getElementById('sustainabilityMetric');
-        if (sustainabilityEl) {
-            sustainabilityEl.textContent = isNaN(sustainability) ? '-' : sustainability.toFixed(3);
-        }
+        const metricUpdates = [
+            { id: 'reliabilityMetric',   value: isNaN(reliability)   ? '-' : `${(reliability * 100).toFixed(1)}%` },
+            { id: 'resilienceMetric',    value: isNaN(resilience)    ? '-' : resilience.toFixed(3) },
+            { id: 'vulnerabilityMetric', value: isNaN(vulnerability) ? '-' : `${(vulnerability * 100).toFixed(1)}%` },
+            { id: 'sustainabilityMetric',value: isNaN(sustainability)? '-' : sustainability.toFixed(3) },
+        ];
+        metricUpdates.forEach(({ id, value }) => {
+            const el = document.getElementById(id);
+            if (el) {
+                el.textContent = value;
+                el.style.opacity = '1';  // always restore full opacity
+            }
+        });
         
         this.diagnostics.log('✓ Metrics displayed', 'good');
         
@@ -1978,16 +1943,16 @@ initClassificationChart() {
     
 updateCharts() {
     if (!this.currentData || this.currentData.length === 0) {
-        console.warn('❌ No data available for charts');
+        console.warn('No data available for charts');
         this.clearCharts();
         return;
     }
-    
-    console.log('🔄 Updating charts with', this.currentData.length, 'records');
-    console.log('📊 First data item:', this.currentData[0]);
-    
-    // DO NOT destroy charts - just update their data
-    // Charts are already initialized, just populate with new data
+
+    // Re-initialize if charts were never created or were destroyed
+    if (!this.charts.timeSeries || !this.charts.classification) {
+        this.initializeCharts();
+    }
+
     this.populateTimeSeriesChart();
     this.populateClassificationChart();
 }

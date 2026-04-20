@@ -8,6 +8,9 @@ class FailureAnalysisDashboard {
         this.rowsPerPage = 15;
         this.charts = {};
         this.isFiltered = false;
+        this._dsSources = [];
+        this._dsPage    = 1;
+        this._dsPageSize = 15;
         
         this.init();
     }
@@ -152,91 +155,18 @@ async handleFileUpload(file) {
 async loadDataSources() {
     try {
         const response = await fetch(`${this.apiBase}/sources`);
-        
+
         if (!response.ok) {
             throw new Error(`HTTP error! status: ${response.status}`);
         }
-        
+
         const data = await response.json();
         console.log('Here are the data sources loaded:', data);
-        
-        const container = document.getElementById('dataSourcesTable');
-        if (!container) return;
-        
-        if (!data.sources || data.sources.length === 0) {
-            container.innerHTML = `
-                <div class="text-center py-8 text-gray-500">
-                    <i class="fas fa-database text-4xl mb-4"></i>
-                    <p>No data sources found</p>
-                    <p class="text-sm mt-2">Upload an Excel file to get started</p>
-                </div>
-            `;
-            return;
-        }
-        
-        const table = `
-            <table class="w-full text-sm">
-                <thead class="bg-gray-50">
-                    <tr>
-                        <th class="px-4 py-3 text-left font-semibold">File Name</th>
-                        <th class="px-4 py-3 text-left font-semibold">Category</th>
-                        <th class="px-4 py-3 text-left font-semibold">Subcatchment</th>
-                        <th class="px-4 py-3 text-left font-semibold">Upload Date</th>
-                        <th class="px-4 py-3 text-left font-semibold">Records</th>
-                        <th class="px-4 py-3 text-left font-semibold">Status</th>
-                        <th class="px-4 py-3 text-center font-semibold">Actions</th>
-                    </tr>
-                </thead>
-                <tbody class="divide-y divide-gray-200">
-                    ${data.sources.map(source => `
-                        <tr class="hover:bg-gray-50">
-                            <td class="px-4 py-3 font-medium">${source.filename || 'Unknown'}</td>
-                            <td class="px-4 py-3">
-                                <span class="px-2 py-1 text-xs rounded ${
-                                    source.category === 'BASEFLOW' ? 'bg-blue-100 text-blue-800' :
-                                    source.category === 'RECHARGE' ? 'bg-green-100 text-green-800' :
-                                    source.category === 'GWLEVEL' ? 'bg-purple-100 text-purple-800' :
-                                    'bg-gray-100 text-gray-800'
-                                }">
-                                    ${source.category || 'N/A'}
-                                </span>
-                            </td>
-                            <td class="px-4 py-3">${source.subcatchment_name || 'N/A'}</td>
-                            <td class="px-4 py-3">${source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'N/A'}</td>
-                            <td class="px-4 py-3 text-center">
-                                <span class="font-semibold">${(source.total_records || 0).toLocaleString()}</span>
-                            </td>
-                            <td class="px-4 py-3">
-                                <span class="px-2 py-1 text-xs rounded font-semibold ${
-                                    source.processing_status === 'Completed' ? 'bg-green-100 text-green-800' :
-                                    source.processing_status === 'Failed' ? 'bg-red-100 text-red-800' :
-                                    source.processing_status === 'Pending' ? 'bg-yellow-100 text-yellow-800' :
-                                    'bg-gray-100 text-gray-800'
-                                }">
-                                    ${source.processing_status || 'Unknown'}
-                                </span>
-                                ${source.error_message ? `
-                                    <div class="text-xs text-red-600 mt-1" title="${source.error_message}">
-                                        <i class="fas fa-exclamation-circle"></i> Error
-                                    </div>
-                                ` : ''}
-                            </td>
-                            <td class="px-4 py-3 text-center">
-                                <button 
-                                    onclick="app.deleteSource(${source.source_id})" 
-                                    class="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-1 rounded transition-all" 
-                                    title="Delete this data source">
-                                    <i class="fas fa-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `).join('')}
-                </tbody>
-            </table>
-        `;
-        
-        container.innerHTML = table;
-        
+
+        this._dsSources = data.sources || [];
+        this._dsPage    = 1;   // reset to first page on fresh load
+        this._renderDataSourcesPage();
+
     } catch (error) {
         console.error('Failed to load data sources:', error);
         const container = document.getElementById('dataSourcesTable');
@@ -253,6 +183,131 @@ async loadDataSources() {
             `;
         }
     }
+}
+
+_renderDataSourcesPage() {
+    const container = document.getElementById('dataSourcesTable');
+    if (!container) return;
+
+    const sources   = this._dsSources;
+    const pageSize  = this._dsPageSize;
+    const page      = this._dsPage;
+    const total     = sources.length;
+    const totalPages = Math.max(1, Math.ceil(total / pageSize));
+
+    // Clamp page
+    if (page < 1)           this._dsPage = 1;
+    if (page > totalPages)  this._dsPage = totalPages;
+
+    const start   = (this._dsPage - 1) * pageSize;
+    const slice   = sources.slice(start, start + pageSize);
+
+    if (total === 0) {
+        container.innerHTML = `
+            <div class="text-center py-8 text-gray-500">
+                <i class="fas fa-database text-4xl mb-4"></i>
+                <p>No data sources found</p>
+                <p class="text-sm mt-2">Upload an Excel file to get started</p>
+            </div>`;
+        return;
+    }
+
+    const rows = slice.map(source => `
+        <tr class="hover:bg-gray-50">
+            <td class="px-4 py-3 font-medium">${source.filename || 'Unknown'}</td>
+            <td class="px-4 py-3">
+                <span class="px-2 py-1 text-xs rounded ${
+                    source.category === 'BASEFLOW' ? 'bg-blue-100 text-blue-800' :
+                    source.category === 'RECHARGE' ? 'bg-green-100 text-green-800' :
+                    source.category === 'GWLEVEL'  ? 'bg-purple-100 text-purple-800' :
+                    'bg-gray-100 text-gray-800'
+                }">
+                    ${source.category || 'N/A'}
+                </span>
+            </td>
+            <td class="px-4 py-3">${source.subcatchment_name || 'N/A'}</td>
+            <td class="px-4 py-3">${source.upload_date ? new Date(source.upload_date).toLocaleDateString() : 'N/A'}</td>
+            <td class="px-4 py-3 text-center">
+                <span class="font-semibold">${(source.total_records || 0).toLocaleString()}</span>
+            </td>
+            <td class="px-4 py-3">
+                <span class="px-2 py-1 text-xs rounded font-semibold ${
+                    source.processing_status === 'Completed' ? 'bg-green-100 text-green-800' :
+                    source.processing_status === 'Failed'    ? 'bg-red-100 text-red-800' :
+                    source.processing_status === 'Pending'   ? 'bg-yellow-100 text-yellow-800' :
+                    'bg-gray-100 text-gray-800'
+                }">
+                    ${source.processing_status || 'Unknown'}
+                </span>
+                ${source.error_message ? `
+                    <div class="text-xs text-red-600 mt-1" title="${source.error_message}">
+                        <i class="fas fa-exclamation-circle"></i> Error
+                    </div>` : ''}
+            </td>
+            <td class="px-4 py-3 text-center">
+                <div class="flex items-center justify-center gap-2">
+                    <button
+                        onclick="app.openPreviewModal(${source.source_id}, '${(source.filename||'').replace(/'/g,"\\'")}', '${source.category||''}', '${(source.subcatchment_name||'').replace(/'/g,"\\'")}' )"
+                        class="text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-3 py-1 rounded transition-all"
+                        title="Preview & edit records">
+                        <i class="fas fa-eye"></i>
+                    </button>
+                    <button
+                        onclick="app.deleteSource(${source.source_id})"
+                        class="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-1 rounded transition-all"
+                        title="Delete this data source">
+                        <i class="fas fa-trash"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>`).join('');
+
+    // Build pagination buttons
+    const prevDisabled = this._dsPage <= 1;
+    const nextDisabled = this._dsPage >= totalPages;
+
+    const pageButtons = Array.from({ length: totalPages }, (_, i) => {
+        const p = i + 1;
+        const active = p === this._dsPage;
+        return `<button onclick="app._dsSources && (app._dsPage=${p}, app._renderDataSourcesPage())"
+                        class="px-3 py-1 text-sm rounded border ${active
+                            ? 'bg-blue-600 text-white border-blue-600 font-semibold'
+                            : 'border-gray-300 text-gray-600 hover:bg-gray-50'}">
+                    ${p}
+                </button>`;
+    }).join('');
+
+    container.innerHTML = `
+        <table class="w-full text-sm">
+            <thead class="bg-gray-50">
+                <tr>
+                    <th class="px-4 py-3 text-left font-semibold">File Name</th>
+                    <th class="px-4 py-3 text-left font-semibold">Category</th>
+                    <th class="px-4 py-3 text-left font-semibold">Subcatchment</th>
+                    <th class="px-4 py-3 text-left font-semibold">Upload Date</th>
+                    <th class="px-4 py-3 text-left font-semibold">Records</th>
+                    <th class="px-4 py-3 text-left font-semibold">Status</th>
+                    <th class="px-4 py-3 text-center font-semibold">Actions</th>
+                </tr>
+            </thead>
+            <tbody class="divide-y divide-gray-200">${rows}</tbody>
+        </table>
+        <div class="flex items-center justify-between px-4 py-3 border-t bg-gray-50 text-sm text-gray-600">
+            <span>Showing ${start + 1}–${Math.min(start + pageSize, total)} of ${total} source(s)</span>
+            <div class="flex items-center gap-1">
+                <button onclick="app._dsPage > 1 && (app._dsPage--, app._renderDataSourcesPage())"
+                        ${prevDisabled ? 'disabled' : ''}
+                        class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fas fa-chevron-left"></i>
+                </button>
+                ${pageButtons}
+                <button onclick="app._dsPage < ${totalPages} && (app._dsPage++, app._renderDataSourcesPage())"
+                        ${nextDisabled ? 'disabled' : ''}
+                        class="px-3 py-1 rounded border border-gray-300 hover:bg-gray-100 disabled:opacity-40 disabled:cursor-not-allowed">
+                    <i class="fas fa-chevron-right"></i>
+                </button>
+            </div>
+        </div>`;
 }
 
   printReport() {
@@ -950,13 +1005,474 @@ showToast(message, type = 'info') {
     }, 5000);
 }
 
+    // ── PREVIEW MODAL ────────────────────────────────────────────────────────
 
+    async openPreviewModal(sourceId, fileName, category, catchment) {
+        ensurePreviewModalExists();
+
+        this._previewSourceId = sourceId;
+        this._previewChanges  = new Map();   // processed_id → {measurement_date, original_value}
+        this._previewSelected = new Set();   // selected processed_ids for deletion
+
+        // Header info
+        document.getElementById('previewTitle').textContent   = fileName || `Source #${sourceId}`;
+        document.getElementById('previewSubtitle').textContent =
+            `${catchment || '—'} · ${(category || '').toUpperCase()} · Source ID: ${sourceId}`;
+        document.getElementById('previewRecordCount').textContent = '';
+        document.getElementById('previewChangeBadge').classList.add('hidden');
+        document.getElementById('previewSaveBtn').disabled = true;
+
+        // Show modal
+        const modal = document.getElementById('previewModal');
+        modal.classList.remove('hidden');
+        modal.classList.add('flex');
+
+        // Fetch records
+        try {
+            const res    = await fetch(`${this.apiBase}/sources/${sourceId}/records`);
+            const result = await res.json();
+
+            if (!result.success) throw new Error(result.error || 'Failed to load records');
+
+            this._previewRecords = result.records;
+            this._renderPreviewTable(result.records);
+            document.getElementById('previewRecordCount').textContent =
+                `${result.records.length} record(s)`;
+        } catch (err) {
+            document.getElementById('previewTableWrap').innerHTML = `
+                <div class="text-center py-12 text-red-500">
+                    <i class="fas fa-exclamation-circle text-3xl mb-3"></i>
+                    <p class="font-semibold">Failed to load records</p>
+                    <p class="text-sm mt-1">${err.message}</p>
+                </div>`;
+        }
+    }
+
+    closePreviewModal() {
+        const modal = document.getElementById('previewModal');
+        if (!modal) return;
+        modal.classList.add('hidden');
+        modal.classList.remove('flex');
+        this._previewChanges  = new Map();
+        this._previewRecords  = [];
+        this._previewSourceId = null;
+    }
+
+    _classifyZ(z) {
+        // Must mirror sp_ProcessRawData thresholds exactly
+        if (z >= 0.5)   return { cls: 'Surplus',          fail: 0, sev: 0 };
+        if (z >= -0.5)  return { cls: 'Normal',            fail: 0, sev: 0 };
+        if (z >= -1.0)  return { cls: 'Moderate_Deficit',  fail: 1, sev: 1 };
+        if (z >= -1.5)  return { cls: 'Severe_Deficit',    fail: 1, sev: 2 };
+        return             { cls: 'Extreme_Deficit',    fail: 1, sev: 3 };
+    }
+
+    _clsBadge(cls) {
+        const map = {
+            'Surplus':           'bg-blue-100 text-blue-800',
+            'Normal':            'bg-green-100 text-green-800',
+            'Moderate_Deficit':  'bg-yellow-100 text-yellow-800',
+            'Severe_Deficit':    'bg-orange-100 text-orange-800',
+            'Extreme_Deficit':   'bg-red-100 text-red-800',
+        };
+        return `<span class="px-2 py-0.5 text-xs rounded font-semibold ${map[cls] || 'bg-gray-100 text-gray-700'}">
+                    ${(cls||'').replace(/_/g,' ')}
+                </span>`;
+    }
+
+    _renderPreviewTable(records) {
+        if (!records || records.length === 0) {
+            document.getElementById('previewTableWrap').innerHTML =
+                '<p class="text-center py-10 text-gray-400">No records found for this source.</p>';
+            return;
+        }
+
+        const rows = records.map(rec => {
+            const changed   = this._previewChanges.has(rec.processed_id);
+            const selected  = this._previewSelected.has(rec.processed_id);
+            const rowData   = changed ? this._previewChanges.get(rec.processed_id) : {};
+            const isFail    = rec.is_failure === 1;
+            const rowClass  = selected  ? 'bg-blue-50 ring-1 ring-inset ring-blue-300'
+                            : changed   ? 'bg-yellow-50'
+                            : isFail    ? 'bg-red-50'
+                            : 'hover:bg-gray-50';
+
+            const dateVal  = rowData.measurement_date ?? rec.measurement_date ?? '';
+            const valVal   = rowData.original_value   !== undefined
+                             ? rowData.original_value : (rec.original_value ?? '');
+
+            // Compute preview z-score for display when row is dirty
+            let dispZ   = rec.standardized_value;
+            let dispCls = rec.classification;
+            let dispFail = rec.is_failure;
+            let dispSev  = rec.severity_level;
+            if (changed && rowData.original_value !== undefined &&
+                rec.mean_value !== null && rec.std_deviation) {
+                const std = rec.std_deviation || 1;
+                dispZ = (parseFloat(rowData.original_value) - rec.mean_value) / std;
+                const c = this._classifyZ(dispZ);
+                dispCls = c.cls; dispFail = c.fail; dispSev = c.sev;
+            }
+
+            return `
+            <tr class="${rowClass} transition-colors" id="prev-row-${rec.processed_id}">
+                <td class="px-3 py-2 text-center">
+                    <input type="checkbox"
+                           data-pid="${rec.processed_id}"
+                           ${selected ? 'checked' : ''}
+                           onchange="app._onSelectRow(${rec.processed_id}, this.checked)"
+                           class="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer">
+                </td>
+                <td class="px-3 py-2 text-center text-xs text-gray-400">${rec.processed_id}</td>
+                <td class="px-3 py-2">
+                    <input type="date"
+                           value="${dateVal}"
+                           data-pid="${rec.processed_id}"
+                           data-field="measurement_date"
+                           onchange="app._onPreviewCellChange(this)"
+                           class="w-full border border-transparent rounded px-1 py-0.5 text-sm focus:border-blue-400 focus:outline-none bg-transparent hover:border-gray-300">
+                </td>
+                <td class="px-3 py-2 text-xs text-gray-500">${rec.parameter_type || ''}</td>
+                <td class="px-3 py-2">
+                    <input type="number"
+                           value="${valVal}"
+                           step="any"
+                           data-pid="${rec.processed_id}"
+                           data-field="original_value"
+                           data-mean="${rec.mean_value ?? 0}"
+                           data-std="${rec.std_deviation ?? 1}"
+                           onchange="app._onPreviewCellChange(this)"
+                           class="w-28 border border-transparent rounded px-1 py-0.5 text-sm focus:border-blue-400 focus:outline-none bg-transparent hover:border-gray-300 text-right">
+                </td>
+                <td class="px-3 py-2 text-right text-sm font-mono" id="prev-z-${rec.processed_id}">
+                    ${dispZ !== null && dispZ !== undefined ? dispZ.toFixed(4) : '—'}
+                </td>
+                <td class="px-3 py-2" id="prev-cls-${rec.processed_id}">
+                    ${this._clsBadge(dispCls)}
+                </td>
+                <td class="px-3 py-2 text-center" id="prev-fail-${rec.processed_id}">
+                    ${dispFail ? '<span class="text-red-600 font-bold text-xs">YES</span>'
+                               : '<span class="text-green-600 text-xs">No</span>'}
+                </td>
+                <td class="px-3 py-2 text-center text-sm" id="prev-sev-${rec.processed_id}">
+                    ${dispSev ?? 0}
+                </td>
+                ${changed ? `<td class="px-3 py-2 text-center">
+                    <button onclick="app._revertPreviewRow(${rec.processed_id})"
+                            class="text-xs text-gray-400 hover:text-red-500" title="Undo this row">
+                        <i class="fas fa-undo"></i>
+                    </button></td>`
+                : '<td class="px-3 py-2"></td>'}
+            </tr>`;
+        }).join('');
+
+        const allSelected = records.length > 0 && records.every(r => this._previewSelected.has(r.processed_id));
+        document.getElementById('previewTableWrap').innerHTML = `
+            <table class="w-full text-sm border-collapse">
+                <thead class="bg-gray-100 sticky top-0 z-10">
+                    <tr>
+                        <th class="px-3 py-2 text-center w-10">
+                            <input type="checkbox"
+                                   id="previewSelectAll"
+                                   ${allSelected ? 'checked' : ''}
+                                   onchange="app._onSelectAll(this.checked)"
+                                   class="w-4 h-4 rounded border-gray-300 text-blue-600 cursor-pointer"
+                                   title="Select all">
+                        </th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600 w-16">ID</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600">Date</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600">Parameter</th>
+                        <th class="px-3 py-2 text-right text-xs font-semibold text-gray-600">Original Value</th>
+                        <th class="px-3 py-2 text-right text-xs font-semibold text-gray-600">Z-Score (SDI)</th>
+                        <th class="px-3 py-2 text-left text-xs font-semibold text-gray-600">Classification</th>
+                        <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600">Failure</th>
+                        <th class="px-3 py-2 text-center text-xs font-semibold text-gray-600">Severity</th>
+                        <th class="px-3 py-2 w-8"></th>
+                    </tr>
+                </thead>
+                <tbody class="divide-y divide-gray-100">${rows}</tbody>
+            </table>`;
+    }
+
+    _onPreviewCellChange(input) {
+        const pid   = parseInt(input.dataset.pid, 10);
+        const field = input.dataset.field;
+        const val   = input.value;
+
+        // Start or update the change entry for this row
+        const entry = this._previewChanges.get(pid) || {};
+        entry[field] = field === 'original_value' ? parseFloat(val) : val;
+        this._previewChanges.set(pid, entry);
+
+        // Live-update derived display columns (Z-score, classification, failure, severity)
+        if (field === 'original_value') {
+            const mean = parseFloat(input.dataset.mean || 0);
+            const std  = parseFloat(input.dataset.std  || 1) || 1;
+            const z    = (parseFloat(val) - mean) / std;
+            const { cls, fail, sev } = this._classifyZ(z);
+
+            const zEl   = document.getElementById(`prev-z-${pid}`);
+            const clsEl = document.getElementById(`prev-cls-${pid}`);
+            const fEl   = document.getElementById(`prev-fail-${pid}`);
+            const sEl   = document.getElementById(`prev-sev-${pid}`);
+            if (zEl)   zEl.textContent = z.toFixed(4);
+            if (clsEl) clsEl.innerHTML = this._clsBadge(cls);
+            if (fEl)   fEl.innerHTML   = fail
+                ? '<span class="text-red-600 font-bold text-xs">YES</span>'
+                : '<span class="text-green-600 text-xs">No</span>';
+            if (sEl)   sEl.textContent = sev;
+        }
+
+        // Highlight the row
+        const row = document.getElementById(`prev-row-${pid}`);
+        if (row) row.className = 'bg-yellow-50 transition-colors';
+
+        // Update badge + button state
+        this._refreshPreviewUI();
+    }
+
+    _revertPreviewRow(pid) {
+        this._previewChanges.delete(pid);
+        // Re-render to restore the original values for that row
+        this._renderPreviewTable(this._previewRecords);
+        this._refreshPreviewUI();
+    }
+
+    _onSelectRow(pid, checked) {
+        if (checked) {
+            this._previewSelected.add(pid);
+        } else {
+            this._previewSelected.delete(pid);
+        }
+        // Update row highlight without full re-render
+        const row = document.getElementById(`prev-row-${pid}`);
+        if (row) {
+            const changed = this._previewChanges.has(pid);
+            const rec = this._previewRecords.find(r => r.processed_id === pid);
+            const isFail = rec && rec.is_failure === 1;
+            row.className = (checked         ? 'bg-blue-50 ring-1 ring-inset ring-blue-300'
+                            : changed        ? 'bg-yellow-50'
+                            : isFail         ? 'bg-red-50'
+                            : 'hover:bg-gray-50') + ' transition-colors';
+        }
+        // Update select-all checkbox state
+        const allChk = document.getElementById('previewSelectAll');
+        if (allChk && this._previewRecords) {
+            allChk.checked = this._previewRecords.length > 0 &&
+                this._previewRecords.every(r => this._previewSelected.has(r.processed_id));
+            allChk.indeterminate = !allChk.checked && this._previewSelected.size > 0;
+        }
+        this._refreshPreviewUI();
+    }
+
+    _onSelectAll(checked) {
+        if (!this._previewRecords) return;
+        if (checked) {
+            this._previewRecords.forEach(r => this._previewSelected.add(r.processed_id));
+        } else {
+            this._previewSelected.clear();
+        }
+        // Re-render to reflect new selection state
+        this._renderPreviewTable(this._previewRecords);
+        this._refreshPreviewUI();
+    }
+
+    _refreshPreviewUI() {
+        const nChanges  = this._previewChanges ? this._previewChanges.size : 0;
+        const nSelected = this._previewSelected ? this._previewSelected.size : 0;
+
+        const saveBtn   = document.getElementById('previewSaveBtn');
+        const badge     = document.getElementById('previewChangeBadge');
+        const count     = document.getElementById('previewChangeCount');
+        const delBtn    = document.getElementById('previewDeleteBtn');
+        const delCount  = document.getElementById('previewDeleteCount');
+
+        if (saveBtn) saveBtn.disabled = nChanges === 0;
+        if (badge)  badge.classList.toggle('hidden', nChanges === 0);
+        if (count)  count.textContent = nChanges;
+        if (delBtn) {
+            delBtn.disabled = nSelected === 0;
+            if (delCount) delCount.textContent = nSelected;
+        }
+    }
+
+    async deleteSelectedRecords() {
+        if (!this._previewSelected || this._previewSelected.size === 0) return;
+
+        const ids = Array.from(this._previewSelected);
+        const confirmed = confirm(`Delete ${ids.length} selected record(s)? This cannot be undone.`);
+        if (!confirmed) return;
+
+        const delBtn = document.getElementById('previewDeleteBtn');
+        if (delBtn) { delBtn.disabled = true; delBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Deleting…'; }
+
+        try {
+            const res = await fetch(`${this.apiBase}/sources/${this._previewSourceId}/records`, {
+                method:  'DELETE',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ processed_ids: ids })
+            });
+            const result = await res.json();
+            if (!result.success) throw new Error(result.error || 'Delete failed');
+
+            this.showToast(`${result.deleted} record(s) deleted`, 'success');
+
+            // Clear selection and refresh
+            this._previewSelected.clear();
+            const fresh = await fetch(`${this.apiBase}/sources/${this._previewSourceId}/records`);
+            const freshData = await fresh.json();
+            if (freshData.success) {
+                this._previewRecords = freshData.records;
+                this._renderPreviewTable(freshData.records);
+                document.getElementById('previewRecordCount').textContent =
+                    `${freshData.records.length} record(s)`;
+            }
+            this._refreshPreviewUI();
+
+            // Refresh the failure analysis tables in background
+            await this.loadDataSources();
+            await this.loadAllFailures();
+
+        } catch (err) {
+            this.showToast(`Delete failed: ${err.message}`, 'error');
+            console.error('deleteSelectedRecords error:', err);
+        } finally {
+            if (delBtn) {
+                delBtn.disabled = (this._previewSelected.size === 0);
+                delBtn.innerHTML = '<i class="fas fa-trash mr-2"></i>Delete Selected (<span id="previewDeleteCount">0</span>)';
+            }
+        }
+    }
+
+    async savePreviewChanges() {
+        if (!this._previewChanges || this._previewChanges.size === 0) return;
+
+        const records = Array.from(this._previewChanges.entries()).map(([pid, changes]) => ({
+            processed_id: pid,
+            ...changes
+        }));
+
+        const saveBtn = document.getElementById('previewSaveBtn');
+        if (saveBtn) { saveBtn.disabled = true; saveBtn.innerHTML = '<i class="fas fa-spinner fa-spin mr-2"></i>Saving…'; }
+
+        try {
+            const res = await fetch(`${this.apiBase}/sources/${this._previewSourceId}/records`, {
+                method:  'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body:    JSON.stringify({ records })
+            });
+            const result = await res.json();
+
+            if (!result.success) throw new Error(result.error || 'Save failed');
+
+            this.showToast(`${result.updated} record(s) saved successfully`, 'success');
+
+            // Clear change tracking and re-render with fresh data from server
+            this._previewChanges = new Map();
+            const fresh = await fetch(`${this.apiBase}/sources/${this._previewSourceId}/records`);
+            const freshData = await fresh.json();
+            if (freshData.success) {
+                this._previewRecords = freshData.records;
+                this._renderPreviewTable(freshData.records);
+            }
+            this._refreshPreviewUI();
+
+            // Auto-refresh the failure analysis dashboard in the background
+            await this.loadDataSources();
+            await this.loadAllFailures();
+
+        } catch (err) {
+            this.showToast(`Save failed: ${err.message}`, 'error');
+            console.error('savePreviewChanges error:', err);
+        } finally {
+            if (saveBtn) { saveBtn.disabled = false; saveBtn.innerHTML = '<i class="fas fa-save mr-2"></i>Save Changes'; }
+        }
+    }
 
 }
 
+// ─────────────────────────────────────────────────────────────────────────────
+// PREVIEW / EDIT MODAL
+// ─────────────────────────────────────────────────────────────────────────────
 
+// Inject the modal markup once into the page (called lazily)
+function ensurePreviewModalExists() {
+    if (document.getElementById('previewModal')) return;
+    const el = document.createElement('div');
+    el.innerHTML = `
+    <div id="previewModal"
+         class="fixed inset-0 bg-black bg-opacity-60 z-50 hidden items-center justify-center p-4"
+         onclick="if(event.target===this) app.closePreviewModal()">
+        <div class="bg-white rounded-xl shadow-2xl w-full max-w-6xl max-h-[92vh] flex flex-col">
 
+            <!-- Header -->
+            <div class="flex items-center justify-between px-6 py-4 border-b bg-gradient-to-r from-blue-600 to-indigo-600 rounded-t-xl">
+                <div class="text-white">
+                    <h3 class="text-xl font-bold" id="previewTitle">Data Source Records</h3>
+                    <p class="text-blue-100 text-sm mt-0.5" id="previewSubtitle"></p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <span id="previewChangeBadge"
+                          class="hidden px-3 py-1 bg-yellow-400 text-yellow-900 text-xs font-bold rounded-full">
+                        <i class="fas fa-pencil-alt mr-1"></i>
+                        <span id="previewChangeCount">0</span> unsaved change(s)
+                    </span>
+                    <button onclick="app.closePreviewModal()"
+                            class="text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-2 transition-all">
+                        <i class="fas fa-times text-lg"></i>
+                    </button>
+                </div>
+            </div>
 
+            <!-- Legend bar -->
+            <div class="flex items-center gap-4 px-6 py-2 bg-gray-50 border-b text-xs text-gray-600">
+                <span class="flex items-center gap-1">
+                    <span class="w-3 h-3 rounded bg-blue-100 border border-blue-400 inline-block"></span> Selected for deletion
+                </span>
+                <span class="flex items-center gap-1">
+                    <span class="w-3 h-3 rounded bg-yellow-200 border border-yellow-400 inline-block"></span> Edited row (unsaved)
+                </span>
+                <span class="flex items-center gap-1">
+                    <span class="w-3 h-3 rounded bg-red-100 border border-red-300 inline-block"></span> Failure record
+                </span>
+                <span class="text-gray-400">| Click any <strong>Date</strong> or <strong>Value</strong> cell to edit</span>
+            </div>
+
+            <!-- Table -->
+            <div class="flex-1 overflow-auto px-6 py-3" id="previewTableWrap">
+                <div class="flex items-center justify-center py-16 text-gray-400">
+                    <i class="fas fa-spinner fa-spin text-3xl mr-3"></i> Loading records…
+                </div>
+            </div>
+
+            <!-- Footer -->
+            <div class="flex items-center justify-between px-6 py-4 border-t bg-gray-50 rounded-b-xl">
+                <div class="flex items-center gap-3">
+                    <span class="text-sm text-gray-500" id="previewRecordCount"></span>
+                    <button id="previewDeleteBtn"
+                            onclick="app.deleteSelectedRecords()"
+                            disabled
+                            class="px-4 py-2 bg-red-600 text-white rounded-lg hover:bg-red-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold text-sm">
+                        <i class="fas fa-trash mr-2"></i>Delete Selected (<span id="previewDeleteCount">0</span>)
+                    </button>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button onclick="app.closePreviewModal()"
+                            class="px-5 py-2 border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-100 transition-all">
+                        Cancel
+                    </button>
+                    <button id="previewSaveBtn"
+                            onclick="app.savePreviewChanges()"
+                            disabled
+                            class="px-6 py-2 bg-blue-600 text-white rounded-lg hover:bg-blue-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all font-semibold">
+                        <i class="fas fa-save mr-2"></i>Save Changes
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>`;
+    document.body.appendChild(el.firstElementChild);
+}
 
 // Initialize the dashboard
 let app;

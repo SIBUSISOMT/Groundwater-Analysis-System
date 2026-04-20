@@ -307,6 +307,22 @@ class ValidationError(Exception):
 # ERROR RESPONSE GENERATOR
 # ============================================================================
 
+def parse_date_param(date_str):
+    """
+    Convert a date string (YYYY-MM-DD from browser input) to a Python date object.
+    Passing a date object to pyodbc is safer than a raw string because it bypasses
+    SQL Server's session-level DATEFORMAT setting, preventing intermittent parse failures.
+    Returns None if the string is empty or invalid.
+    """
+    if not date_str:
+        return None
+    try:
+        return datetime.strptime(date_str.strip(), '%Y-%m-%d').date()
+    except ValueError:
+        logger.warning(f"Could not parse date parameter: {date_str!r}")
+        return None
+
+
 def get_error_response(error_code, user_message, details=None, guidance=None, found_data=None):
     """Generate standardized error response"""
     return {
@@ -774,13 +790,13 @@ def get_detailed_records():
     try:
         catchment = request.args.get('catchment')
         parameter = request.args.get('parameter')
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
+        start_date = parse_date_param(request.args.get('start_date'))
+        end_date = parse_date_param(request.args.get('end_date'))
         limit = request.args.get('limit', 10000, type=int)
-        
+
         # Build the query
         query = """
-        SELECT 
+        SELECT
             pd.processed_id,
             pd.measurement_date,
             c.catchment_name as sub_catchment,
@@ -807,17 +823,17 @@ def get_detailed_records():
             params.append(parameter.lower())
         
         if start_date:
-            query += " AND pd.measurement_date >= ?"
+            query += " AND CAST(pd.measurement_date AS DATE) >= ?"
             params.append(start_date)
-        
+
         if end_date:
-            query += " AND pd.measurement_date <= ?"
+            query += " AND CAST(pd.measurement_date AS DATE) <= ?"
             params.append(end_date)
-        
+
         query += " ORDER BY pd.measurement_date DESC"
-        
+
         results = db.execute_query(query, params if params else None)
-        
+
         # Format results
         records = []
         for row in results[:limit]:
@@ -859,10 +875,10 @@ def get_data():
         catchment = request.args.get('catchment')  
         parameter = request.args.get('parameter')  
         parameter_type = request.args.get('parameter_type') 
-        start_date = request.args.get('start_date')
-        end_date = request.args.get('end_date')
+        start_date = parse_date_param(request.args.get('start_date'))
+        end_date = parse_date_param(request.args.get('end_date'))
         limit = request.args.get('limit', 10000, type=int)
-        
+
         # Use whichever parameter name was provided
         if not parameter and parameter_type:
             parameter = parameter_type
@@ -901,12 +917,12 @@ def get_data():
             logger.info(f"[DATA] Added parameter filter: {parameter}")
         
         if start_date:
-            query += " AND CAST(pd.measurement_date AS DATE) >= CAST(? AS DATE)"
+            query += " AND CAST(pd.measurement_date AS DATE) >= ?"
             params.append(start_date)
             logger.info(f"[DATA] Added start_date filter: {start_date}")
-        
+
         if end_date:
-            query += " AND CAST(pd.measurement_date AS DATE) <= CAST(? AS DATE)"
+            query += " AND CAST(pd.measurement_date AS DATE) <= ?"
             params.append(end_date)
             logger.info(f"[DATA] Added end_date filter: {end_date}")
         
@@ -1178,6 +1194,184 @@ def get_sources():
         }), 500
 
 
+@app.route('/api/sources/<int:source_id>/records', methods=['GET'])
+def get_source_records(source_id):
+    """Return every ProcessedData row that belongs to a given source."""
+    try:
+        query = """
+        SELECT
+            pd.processed_id,
+            pd.measurement_date,
+            pd.parameter_type,
+            pd.original_value,
+            pd.mean_value,
+            pd.std_deviation,
+            pd.standardized_value,
+            pd.parameter_deviation,
+            pd.drought_index,
+            pd.classification,
+            pd.is_failure,
+            pd.severity_level,
+            c.catchment_name,
+            ds.file_name,
+            ds.category
+        FROM dbo.ProcessedData pd
+        JOIN dbo.Catchments c  ON pd.catchment_id = c.catchment_id
+        JOIN dbo.DataSources ds ON pd.source_id   = ds.source_id
+        WHERE pd.source_id = ?
+        ORDER BY pd.measurement_date ASC
+        """
+        rows = db.execute_query(query, (source_id,))
+        records = []
+        for r in rows:
+            records.append({
+                'processed_id':      r[0],
+                'measurement_date':  r[1].strftime('%Y-%m-%d') if r[1] else None,
+                'parameter_type':    r[2],
+                'original_value':    float(r[3])  if r[3]  is not None else None,
+                'mean_value':        float(r[4])  if r[4]  is not None else None,
+                'std_deviation':     float(r[5])  if r[5]  is not None else None,
+                'standardized_value':float(r[6])  if r[6]  is not None else None,
+                'parameter_deviation':float(r[7]) if r[7]  is not None else None,
+                'drought_index':     float(r[8])  if r[8]  is not None else None,
+                'classification':    r[9],
+                'is_failure':        int(r[10])   if r[10] is not None else 0,
+                'severity_level':    int(r[11])   if r[11] is not None else 0,
+                'catchment_name':    r[12],
+                'file_name':         r[13],
+                'category':          r[14],
+            })
+        return jsonify({'success': True, 'records': records, 'count': len(records)}), 200
+    except Exception as e:
+        logger.error(f"get_source_records error: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/sources/<int:source_id>/records', methods=['PUT'])
+def update_source_records(source_id):
+    """
+    Accept a list of edited records, recompute all derived fields, and persist.
+    Payload: { "records": [ { "processed_id": 1, "measurement_date": "2022-10-01",
+                                "original_value": 1.23 }, ... ] }
+    """
+    try:
+        body = request.get_json(force=True)
+        if not body or not isinstance(body.get('records'), list):
+            return jsonify({'success': False, 'error': 'Expected {"records": [...]}'}), 400
+
+        edits = body['records']
+        updated = 0
+
+        for rec in edits:
+            pid        = rec.get('processed_id')
+            new_date   = rec.get('measurement_date')
+            new_value  = rec.get('original_value')
+
+            if pid is None:
+                continue
+
+            # Fetch the stored mean + stdev so we can recompute the z-score
+            existing = db.execute_query(
+                "SELECT mean_value, std_deviation FROM dbo.ProcessedData "
+                "WHERE processed_id = ? AND source_id = ?",
+                (pid, source_id)
+            )
+            if not existing:
+                logger.warning(f"update_source_records: processed_id {pid} not in source {source_id}")
+                continue
+
+            mean_val = float(existing[0][0]) if existing[0][0] is not None else 0.0
+            std_val  = float(existing[0][1]) if existing[0][1] is not None else 1.0
+            if std_val == 0:
+                std_val = 1.0   # guard against division by zero
+
+            set_clauses  = []
+            update_params = []
+
+            if new_value is not None:
+                val = float(new_value)
+                z   = (val - mean_val) / std_val
+
+                # Classification thresholds (must match sp_ProcessRawData)
+                if z >= 0.5:
+                    cls = 'Surplus'
+                elif z >= -0.5:
+                    cls = 'Normal'
+                elif z >= -1.0:
+                    cls = 'Moderate_Deficit'
+                elif z >= -1.5:
+                    cls = 'Severe_Deficit'
+                else:
+                    cls = 'Extreme_Deficit'
+
+                is_fail  = 1 if z < -0.5 else 0
+                severity = 0 if z >= -0.5 else (1 if z >= -1.0 else (2 if z >= -1.5 else 3))
+
+                set_clauses  += ['original_value=?','standardized_value=?','drought_index=?',
+                                  'parameter_deviation=?','classification=?',
+                                  'is_failure=?','severity_level=?']
+                update_params += [val, z, z, val - mean_val, cls, is_fail, severity]
+
+            if new_date:
+                parsed = parse_date_param(new_date)
+                if parsed:
+                    set_clauses.append('measurement_date=?')
+                    update_params.append(parsed)
+
+            if not set_clauses:
+                continue
+
+            update_params += [pid, source_id]
+            db.execute_query(
+                f"UPDATE dbo.ProcessedData SET {', '.join(set_clauses)} "
+                f"WHERE processed_id = ? AND source_id = ?",
+                update_params, fetch=False
+            )
+            updated += 1
+
+        logger.info(f"update_source_records: {updated} rows updated for source {source_id}")
+        return jsonify({'success': True, 'updated': updated,
+                        'message': f'{updated} record(s) updated successfully'}), 200
+
+    except Exception as e:
+        logger.error(f"update_source_records error: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/sources/<int:source_id>/records', methods=['DELETE'])
+def delete_source_records(source_id):
+    """Delete specific ProcessedData rows by processed_id."""
+    try:
+        body = request.get_json(force=True, silent=True) or {}
+        processed_ids = body.get('processed_ids', [])
+
+        if not processed_ids or not isinstance(processed_ids, list):
+            return jsonify({'success': False, 'error': 'processed_ids must be a non-empty list'}), 400
+
+        # Validate all IDs are integers
+        try:
+            processed_ids = [int(pid) for pid in processed_ids]
+        except (ValueError, TypeError):
+            return jsonify({'success': False, 'error': 'All processed_ids must be integers'}), 400
+
+        placeholders = ','.join(['?'] * len(processed_ids))
+        params = processed_ids + [source_id]
+        db.execute_query(
+            f"DELETE FROM dbo.ProcessedData WHERE processed_id IN ({placeholders}) AND source_id = ?",
+            params, fetch=False
+        )
+
+        logger.info(f"delete_source_records: {len(processed_ids)} rows deleted for source {source_id}")
+        return jsonify({'success': True, 'deleted': len(processed_ids),
+                        'message': f'{len(processed_ids)} record(s) deleted'}), 200
+
+    except Exception as e:
+        logger.error(f"delete_source_records error: {e}")
+        logger.error(traceback.format_exc())
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
 @app.route('/api/sources/<int:source_id>', methods=['GET', 'DELETE'])
 def handle_source(source_id):
     """Get source details or delete source"""
@@ -1267,8 +1461,8 @@ def get_failure_analysis():
         catchment = request.args.get('catchment')
         category = request.args.get('category')  # What frontend sends
         parameter = request.args.get('parameter')  # Alternative name
-        start_date = request.args.get('start_date')  # ✅ DATE FILTER SUPPORT
-        end_date = request.args.get('end_date')      # ✅ DATE FILTER SUPPORT
+        start_date = parse_date_param(request.args.get('start_date'))
+        end_date = parse_date_param(request.args.get('end_date'))
 
         # Use whichever one was provided
         param_filter = category or parameter
@@ -1302,12 +1496,12 @@ def get_failure_analysis():
 
         # ✅ NEW: Add date range filters
         if start_date:
-            query += " AND CAST(pd.measurement_date AS DATE) >= CAST(? AS DATE)"
+            query += " AND CAST(pd.measurement_date AS DATE) >= ?"
             params.append(start_date)
             logger.info(f"[FILTER] Adding start_date filter: {start_date}")
 
         if end_date:
-            query += " AND CAST(pd.measurement_date AS DATE) <= CAST(? AS DATE)"
+            query += " AND CAST(pd.measurement_date AS DATE) <= ?"
             params.append(end_date)
             logger.info(f"[FILTER] Adding end_date filter: {end_date}")
 
@@ -1355,11 +1549,11 @@ def get_failure_analysis():
 
         # ✅ NEW: Add date range filters to overall stats too
         if start_date:
-            overall_query += " AND CAST(measurement_date AS DATE) >= CAST(? AS DATE)"
+            overall_query += " AND CAST(measurement_date AS DATE) >= ?"
             overall_params.append(start_date)
 
         if end_date:
-            overall_query += " AND CAST(measurement_date AS DATE) <= CAST(? AS DATE)"
+            overall_query += " AND CAST(measurement_date AS DATE) <= ?"
             overall_params.append(end_date)
 
         overall_results = db.execute_query(overall_query, overall_params if overall_params else None)
@@ -1426,8 +1620,8 @@ def get_metrics():
         catchment = request.args.get('catchment')
         parameter = request.args.get('parameter')
         parameter_type = request.args.get('parameter_type')
-        start_date = request.args.get('start_date')  # ✅ DATE FILTER SUPPORT
-        end_date = request.args.get('end_date')      # ✅ DATE FILTER SUPPORT
+        start_date = parse_date_param(request.args.get('start_date'))
+        end_date = parse_date_param(request.args.get('end_date'))
 
         # ✅ NEW: Handle aggregation flag
         aggregate = request.args.get('aggregate', 'false').lower() == 'true'
@@ -1533,12 +1727,12 @@ def get_metrics():
 
             # ✅ NEW: Add date range filters
             if start_date:
-                query += " AND CAST(pd.measurement_date AS DATE) >= CAST(? AS DATE)"
+                query += " AND CAST(pd.measurement_date AS DATE) >= ?"
                 params.append(start_date)
                 logger.info(f"[METRICS] Adding start_date filter: {start_date}")
 
             if end_date:
-                query += " AND CAST(pd.measurement_date AS DATE) <= CAST(? AS DATE)"
+                query += " AND CAST(pd.measurement_date AS DATE) <= ?"
                 params.append(end_date)
                 logger.info(f"[METRICS] Adding end_date filter: {end_date}")
         
@@ -1636,12 +1830,12 @@ def get_metrics():
 
             # ✅ NEW: Add date range filters
             if start_date:
-                query += " AND CAST(pd.measurement_date AS DATE) >= CAST(? AS DATE)"
+                query += " AND CAST(pd.measurement_date AS DATE) >= ?"
                 params.append(start_date)
                 logger.info(f"[METRICS] Adding start_date filter: {start_date}")
 
             if end_date:
-                query += " AND CAST(pd.measurement_date AS DATE) <= CAST(? AS DATE)"
+                query += " AND CAST(pd.measurement_date AS DATE) <= ?"
                 params.append(end_date)
                 logger.info(f"[METRICS] Adding end_date filter: {end_date}")
 
