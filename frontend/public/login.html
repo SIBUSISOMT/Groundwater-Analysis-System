@@ -1,0 +1,674 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HydroCore — Sign In</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* Left panel animated gradient */
+        .hero-panel {
+            background: linear-gradient(160deg, #0f172a 0%, #1e293b 50%, #0f172a 100%);
+            position: relative;
+            overflow: hidden;
+        }
+        .hero-panel::before {
+            content: '';
+            position: absolute;
+            top: -50%;
+            left: -50%;
+            width: 200%;
+            height: 200%;
+            background: radial-gradient(ellipse at center,
+                rgba(59,130,246,0.12) 0%,
+                rgba(139,92,246,0.08) 40%,
+                transparent 70%);
+            animation: heroRotate 20s linear infinite;
+        }
+        @keyframes heroRotate {
+            0%   { transform: rotate(0deg); }
+            100% { transform: rotate(360deg); }
+        }
+
+        /* Floating water droplet animation */
+        .drop-icon {
+            animation: dropFloat 3s ease-in-out infinite;
+            filter: drop-shadow(0 0 20px rgba(59,130,246,0.5));
+        }
+        @keyframes dropFloat {
+            0%, 100% { transform: translateY(0px); }
+            50%       { transform: translateY(-12px); }
+        }
+
+        /* Pulse ring behind icon */
+        .pulse-ring {
+            animation: pulseRing 2.5s ease-out infinite;
+        }
+        @keyframes pulseRing {
+            0%   { transform: scale(1);   opacity: 0.4; }
+            100% { transform: scale(1.6); opacity: 0;   }
+        }
+
+        /* Login card */
+        .login-card {
+            box-shadow: 0 25px 60px rgba(0,0,0,0.12), 0 8px 20px rgba(0,0,0,0.06);
+        }
+
+        /* Input focus */
+        .form-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+        }
+
+        /* Password strength bar */
+        .strength-bar {
+            transition: width 0.3s ease, background-color 0.3s ease;
+        }
+
+        /* Submit button ripple */
+        .btn-primary {
+            position: relative;
+            overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        .btn-primary:hover {
+            transform: translateY(-2px);
+            box-shadow: 0 8px 24px rgba(59,130,246,0.4);
+        }
+        .btn-primary:active { transform: translateY(0); }
+        .btn-primary:disabled {
+            opacity: 0.7;
+            transform: none;
+            cursor: not-allowed;
+        }
+
+        /* Error shake */
+        .shake {
+            animation: shake 0.4s ease;
+        }
+        @keyframes shake {
+            0%,100% { transform: translateX(0); }
+            20%,60% { transform: translateX(-6px); }
+            40%,80% { transform: translateX(6px); }
+        }
+
+        /* Feature bullet dots */
+        .feature-dot {
+            width: 6px;
+            height: 6px;
+            border-radius: 50%;
+            background: #3b82f6;
+            flex-shrink: 0;
+        }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans min-h-screen flex">
+
+    <!-- ════════════════════════════════════════════════════════════
+         LEFT HERO PANEL
+    ═════════════════════════════════════════════════════════════ -->
+    <div class="hero-panel hidden lg:flex flex-col justify-between w-2/5 p-10 text-white relative z-0">
+
+        <!-- Animated water drop -->
+        <div class="relative z-10 flex flex-col items-center text-center py-8">
+            <div class="relative mb-8 flex items-center justify-center">
+                <div class="pulse-ring absolute w-48 h-48 rounded-2xl
+                            border-2 border-blue-400 border-opacity-30"></div>
+                <img src="/images/ChatGPT%20Image%20Apr%2023,%202026,%2010_17_41%20AM.png"
+                     alt="HydroCore"
+                     class="drop-icon relative"
+                     style="width:160px;height:160px;border-radius:20px;">
+            </div>
+
+            <h2 class="text-3xl font-bold mb-3 leading-tight">
+                National Groundwater<br>Analysis Platform
+            </h2>
+            <p class="text-slate-400 text-sm leading-relaxed max-w-xs">
+                Enterprise-grade monitoring and analysis of groundwater systems
+                across South Africa's major river catchments.
+            </p>
+
+            <!-- Features list -->
+            <div class="mt-8 space-y-3 text-left w-full max-w-xs">
+                <div class="flex items-center gap-3 text-sm text-slate-300">
+                    <div class="feature-dot"></div>
+                    Real-time reliability &amp; resilience metrics
+                </div>
+                <div class="flex items-center gap-3 text-sm text-slate-300">
+                    <div class="feature-dot"></div>
+                    Failure analysis &amp; drought classification
+                </div>
+                <div class="flex items-center gap-3 text-sm text-slate-300">
+                    <div class="feature-dot"></div>
+                    Multi-catchment comparative reporting
+                </div>
+                <div class="flex items-center gap-3 text-sm text-slate-300">
+                    <div class="feature-dot"></div>
+                    Role-based institutional access control
+                </div>
+            </div>
+        </div>
+
+        <!-- Credits -->
+        <div class="relative z-10 border-t border-white border-opacity-10 pt-6">
+            <p class="text-xs text-slate-500 mb-1">Methodology by <span class="text-slate-300">Dr T. Shakhane</span></p>
+            <p class="text-xs text-slate-500">Developed by <span class="text-slate-300">Sibusiso Mathonsi</span></p>
+        </div>
+    </div>
+
+    <!-- ════════════════════════════════════════════════════════════
+         RIGHT LOGIN PANEL
+    ═════════════════════════════════════════════════════════════ -->
+    <div class="flex-1 flex flex-col items-center justify-center p-8 bg-white">
+
+        <!-- Mobile logo (shown only on small screens) -->
+        <div class="flex lg:hidden items-center gap-3 mb-8">
+            <img src="/images/ChatGPT%20Image%20Apr%2023,%202026,%2010_17_41%20AM.png"
+                 alt="HydroCore"
+                 style="width:52px;height:52px;border-radius:10px;flex-shrink:0;">
+            <span class="text-xl font-bold text-gray-800">HydroCore</span>
+        </div>
+
+        <!-- Login card -->
+        <div id="loginCard" class="login-card w-full max-w-md bg-white rounded-2xl p-8 border border-gray-100">
+
+            <!-- Header -->
+            <div class="mb-8">
+                <img src="/images/ChatGPT%20Image%20Apr%2023,%202026,%2010_17_41%20AM.png"
+                     alt="HydroCore"
+                     style="width:72px;height:72px;border-radius:14px;margin-bottom:1.25rem;">
+                <h1 class="text-2xl font-bold text-gray-900">Welcome back</h1>
+                <p class="text-gray-500 text-sm mt-1">Sign in to your HydroCore account</p>
+            </div>
+
+            <!-- Error alert -->
+            <div id="errorAlert" class="hidden mb-5 p-4 bg-red-50 border border-red-200
+                                        rounded-xl flex items-start gap-3">
+                <i class="fas fa-exclamation-circle text-red-500 mt-0.5 flex-shrink-0"></i>
+                <p id="errorText" class="text-sm text-red-700"></p>
+            </div>
+
+            <!-- Success alert -->
+            <div id="successAlert" class="hidden mb-5 p-4 bg-green-50 border border-green-200
+                                          rounded-xl flex items-start gap-3">
+                <i class="fas fa-check-circle text-green-500 mt-0.5 flex-shrink-0"></i>
+                <p id="successText" class="text-sm text-green-700"></p>
+            </div>
+
+            <!-- ── LOGIN FORM ─────────────────────────────────────────── -->
+            <form id="loginForm" class="space-y-5" autocomplete="on">
+                <!-- Email -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5" for="email">
+                        Email address
+                    </label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-envelope text-gray-400 text-sm"></i>
+                        </div>
+                        <input
+                            id="email" name="email" type="email"
+                            autocomplete="email" required
+                            placeholder="you@institution.gov.za"
+                            class="form-input w-full pl-10 pr-4 py-3 border border-gray-300 rounded-xl
+                                   text-sm text-gray-900 bg-gray-50 transition-all"
+                        >
+                    </div>
+                </div>
+
+                <!-- Password -->
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5" for="password">
+                        Password
+                    </label>
+                    <div class="relative">
+                        <div class="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                            <i class="fas fa-lock text-gray-400 text-sm"></i>
+                        </div>
+                        <input
+                            id="password" name="password" type="password"
+                            autocomplete="current-password" required
+                            placeholder="••••••••"
+                            class="form-input w-full pl-10 pr-12 py-3 border border-gray-300 rounded-xl
+                                   text-sm text-gray-900 bg-gray-50 transition-all"
+                        >
+                        <button type="button" id="togglePassword"
+                                class="absolute inset-y-0 right-0 pr-3 flex items-center text-gray-400
+                                       hover:text-gray-600 transition-colors">
+                            <i id="toggleIcon" class="fas fa-eye text-sm"></i>
+                        </button>
+                    </div>
+                </div>
+
+                <!-- Submit -->
+                <button type="submit" id="loginBtn"
+                        class="btn-primary w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700
+                               text-white font-semibold rounded-xl text-sm
+                               flex items-center justify-center gap-2">
+                    <span id="loginBtnText">Sign In</span>
+                    <i id="loginSpinner" class="fas fa-spinner fa-spin hidden"></i>
+                </button>
+            </form>
+
+            <!-- Security note (replaces self-registration link) -->
+            <div class="mt-5 text-center">
+                <p class="text-sm text-gray-500">
+                    <i class="fas fa-building mr-1"></i>
+                    Contact your organisation administrator to request access.
+                </p>
+            </div>
+
+            <!-- Security note -->
+            <div class="mt-4 flex items-center justify-center gap-2 text-xs text-gray-400">
+                <i class="fas fa-shield-alt"></i>
+                <span>Secured with AES-256 JWT · Session expires after 15 minutes of inactivity</span>
+            </div>
+        </div>
+
+        <!-- ── TWO-FACTOR VERIFICATION CARD (hidden by default) ───── -->
+        <div id="twoFactorCard" class="login-card w-full max-w-md bg-white rounded-2xl p-8
+                                       border border-blue-200 hidden">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 bg-blue-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-shield-alt text-blue-600"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">Two-Factor Verification</h2>
+                    <p class="text-xs text-blue-600">Enter the code from your authenticator app</p>
+                </div>
+            </div>
+
+            <p class="text-sm text-gray-500 mb-6 mt-3">
+                Open your Google Authenticator or Authy app and enter the 6-digit code for HydroCore.
+            </p>
+
+            <div id="tfErrorAlert" class="hidden mb-4 p-3 bg-red-50 border border-red-200
+                                          rounded-lg text-sm text-red-700"></div>
+
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">6-Digit Code</label>
+                    <input id="totpCode" type="text" inputmode="numeric" pattern="[0-9]*"
+                           maxlength="6" placeholder="000000" autocomplete="one-time-code"
+                           class="form-input w-full px-4 py-3 border border-gray-300 rounded-xl
+                                  text-sm text-gray-900 bg-gray-50 text-center text-2xl tracking-widest transition-all">
+                </div>
+                <button id="verifyBtn" type="button" onclick="submitTwoFactor()"
+                        class="btn-primary w-full py-3 bg-gradient-to-r from-blue-600 to-blue-700
+                               text-white font-semibold rounded-xl text-sm
+                               flex items-center justify-center gap-2">
+                    <span id="verifyBtnText">Verify</span>
+                    <i id="verifySpinner" class="fas fa-spinner fa-spin hidden"></i>
+                </button>
+                <button type="button" onclick="cancelTwoFactor()"
+                        class="w-full text-center text-sm text-gray-500 hover:text-blue-600 py-1 transition-colors">
+                    <i class="fas fa-arrow-left mr-1"></i> Back to login
+                </button>
+            </div>
+        </div>
+
+        <!-- ── CHANGE PASSWORD CARD (hidden by default) ─────────── -->
+        <div id="changePasswordCard" class="login-card w-full max-w-md bg-white rounded-2xl p-8
+                                            border border-amber-200 hidden">
+            <div class="flex items-center gap-3 mb-2">
+                <div class="w-10 h-10 bg-amber-100 rounded-xl flex items-center justify-center">
+                    <i class="fas fa-key text-amber-600"></i>
+                </div>
+                <div>
+                    <h2 class="text-lg font-bold text-gray-900">Change Your Password</h2>
+                    <p class="text-xs text-amber-600">Required before you can continue</p>
+                </div>
+            </div>
+
+            <p class="text-sm text-gray-500 mb-6 mt-3">
+                An administrator has reset your password. You must set a new one before accessing the system.
+            </p>
+
+            <div id="cpErrorAlert" class="hidden mb-4 p-3 bg-red-50 border border-red-200
+                                          rounded-lg text-sm text-red-700"></div>
+
+            <form id="changePasswordForm" class="space-y-4">
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">New Password</label>
+                    <input id="newPassword" type="password" placeholder="Minimum 8 characters"
+                           class="form-input w-full px-4 py-3 border border-gray-300 rounded-xl
+                                  text-sm bg-gray-50 transition-all">
+                    <!-- Strength indicator -->
+                    <div class="mt-2 h-1.5 bg-gray-200 rounded-full overflow-hidden">
+                        <div id="strengthBar" class="strength-bar h-full w-0 rounded-full bg-red-500"></div>
+                    </div>
+                    <p id="strengthLabel" class="text-xs text-gray-400 mt-1"></p>
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1.5">Confirm New Password</label>
+                    <input id="confirmPassword" type="password" placeholder="Repeat your new password"
+                           class="form-input w-full px-4 py-3 border border-gray-300 rounded-xl
+                                  text-sm bg-gray-50 transition-all">
+                </div>
+                <ul class="text-xs text-gray-500 space-y-1 mt-1">
+                    <li id="req-len"  class="flex items-center gap-2"><i class="fas fa-circle text-gray-300 text-xs"></i> At least 8 characters</li>
+                    <li id="req-upper"class="flex items-center gap-2"><i class="fas fa-circle text-gray-300 text-xs"></i> One uppercase letter</li>
+                    <li id="req-lower"class="flex items-center gap-2"><i class="fas fa-circle text-gray-300 text-xs"></i> One lowercase letter</li>
+                    <li id="req-num"  class="flex items-center gap-2"><i class="fas fa-circle text-gray-300 text-xs"></i> One number</li>
+                    <li id="req-spec" class="flex items-center gap-2"><i class="fas fa-circle text-gray-300 text-xs"></i> One special character (!@#$%^&amp;*)</li>
+                </ul>
+                <button type="submit" id="cpBtn"
+                        class="btn-primary w-full py-3 bg-gradient-to-r from-amber-500 to-orange-500
+                               text-white font-semibold rounded-xl text-sm
+                               flex items-center justify-center gap-2">
+                    <span id="cpBtnText">Set New Password</span>
+                    <i id="cpSpinner" class="fas fa-spinner fa-spin hidden"></i>
+                </button>
+            </form>
+        </div>
+
+        <!-- Footer -->
+        <p class="mt-8 text-xs text-gray-400 text-center">
+            HydroCore v2.0 · National Groundwater Analysis System
+        </p>
+    </div>
+
+    <script>
+    // ── Backend URL — works whether served from Flask (5000) or Live Server ────
+    const _BACKEND = (window.location.port === '5000' || window.location.port === '')
+        ? ''
+        : 'http://localhost:5000';
+    const API = (url, opts = {}) =>
+        fetch(`${_BACKEND}${url}`, { credentials: _BACKEND ? 'include' : 'same-origin', ...opts });
+
+    // State for 2FA flow
+    let _mfaSessionId = null;
+
+    function showError(msg) {
+        const el = document.getElementById('errorAlert');
+        document.getElementById('errorText').textContent = msg;
+        el.classList.remove('hidden');
+        document.getElementById('loginCard').classList.add('shake');
+        setTimeout(() => document.getElementById('loginCard').classList.remove('shake'), 450);
+    }
+    function hideError() { document.getElementById('errorAlert').classList.add('hidden'); }
+    function showSuccess(msg) {
+        const el = document.getElementById('successAlert');
+        document.getElementById('successText').textContent = msg;
+        el.classList.remove('hidden');
+    }
+
+    function _redirectAfterLogin(user) {
+        if (user.is_system_admin) {
+            window.location.href = '/frontend/public/system_admin.html';
+        } else {
+            window.location.href = '/frontend/public/index.html';
+        }
+    }
+
+    // ── Password show/hide ─────────────────────────────────────────────────────
+    document.getElementById('togglePassword').addEventListener('click', () => {
+        const pwd  = document.getElementById('password');
+        const icon = document.getElementById('toggleIcon');
+        if (pwd.type === 'password') {
+            pwd.type = 'text';
+            icon.classList.replace('fa-eye', 'fa-eye-slash');
+        } else {
+            pwd.type = 'password';
+            icon.classList.replace('fa-eye-slash', 'fa-eye');
+        }
+    });
+
+    // ── Login form ─────────────────────────────────────────────────────────────
+    document.getElementById('loginForm').addEventListener('submit', async (e) => {
+        e.preventDefault();
+        hideError();
+
+        const email    = document.getElementById('email').value.trim();
+        const password = document.getElementById('password').value;
+        const btn      = document.getElementById('loginBtn');
+        const spinner  = document.getElementById('loginSpinner');
+        const btnText  = document.getElementById('loginBtnText');
+
+        btn.disabled = true;
+        spinner.classList.remove('hidden');
+        btnText.textContent = 'Signing in…';
+
+        try {
+            const resp = await API('/api/auth/login', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password }),
+            });
+            const data = await resp.json();
+
+            if (!data.success) {
+                showError(data.error || 'Login failed. Please try again.');
+                return;
+            }
+
+            // 2FA required
+            if (data.requires_2fa) {
+                _mfaSessionId = data.mfa_session_id;
+                document.getElementById('loginCard').classList.add('hidden');
+                document.getElementById('twoFactorCard').classList.remove('hidden');
+                document.getElementById('totpCode').value = '';
+                document.getElementById('totpCode').focus();
+                return;
+            }
+
+            // Persist tokens in tab-scoped sessionStorage so the first
+            // page load can pick them up before the refresh cycle runs.
+            sessionStorage.setItem('hc_at',   data.access_token);
+            sessionStorage.setItem('hc_user', JSON.stringify(data.user));
+            if (data.refresh_token) sessionStorage.setItem('hc_rt', data.refresh_token);
+
+            if (data.user.must_change_password) {
+                // Hide login card, show change-password card
+                document.getElementById('loginCard').classList.add('hidden');
+                document.getElementById('changePasswordCard').classList.remove('hidden');
+                return;
+            }
+
+            // Redirect to dashboard or system admin portal
+            showSuccess('Login successful! Redirecting…');
+            setTimeout(() => _redirectAfterLogin(data.user), 600);
+
+        } catch (err) {
+            showError('Network error. Please check your connection and try again.');
+        } finally {
+            btn.disabled = false;
+            spinner.classList.add('hidden');
+            btnText.textContent = 'Sign In';
+        }
+    });
+
+    // ── 2FA form ───────────────────────────────────────────────────────────────
+    async function submitTwoFactor() {
+        const code    = document.getElementById('totpCode').value.trim();
+        const errEl   = document.getElementById('tfErrorAlert');
+        const btn     = document.getElementById('verifyBtn');
+        const spinner = document.getElementById('verifySpinner');
+        const btnText = document.getElementById('verifyBtnText');
+        errEl.classList.add('hidden');
+
+        if (!code || code.length !== 6) {
+            errEl.textContent = 'Please enter a 6-digit code.';
+            errEl.classList.remove('hidden');
+            return;
+        }
+
+        btn.disabled = true;
+        spinner.classList.remove('hidden');
+        btnText.textContent = 'Verifying…';
+
+        try {
+            const resp = await API('/api/auth/verify-2fa', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ mfa_session_id: _mfaSessionId, totp_code: code }),
+            });
+            const data = await resp.json();
+
+            if (!data.success) {
+                errEl.textContent = data.error || 'Verification failed.';
+                errEl.classList.remove('hidden');
+                document.getElementById('totpCode').value = '';
+                document.getElementById('totpCode').focus();
+                return;
+            }
+
+            sessionStorage.setItem('hc_at',   data.access_token);
+            sessionStorage.setItem('hc_user', JSON.stringify(data.user));
+            if (data.refresh_token) sessionStorage.setItem('hc_rt', data.refresh_token);
+
+            showSuccess('Login successful! Redirecting…');
+            setTimeout(() => _redirectAfterLogin(data.user), 600);
+
+        } catch (err) {
+            errEl.textContent = 'Network error. Please try again.';
+            errEl.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            spinner.classList.add('hidden');
+            btnText.textContent = 'Verify';
+        }
+    }
+
+    function cancelTwoFactor() {
+        _mfaSessionId = null;
+        document.getElementById('totpCode').value = '';
+        document.getElementById('tfErrorAlert').classList.add('hidden');
+        document.getElementById('twoFactorCard').classList.add('hidden');
+        document.getElementById('loginCard').classList.remove('hidden');
+        hideError();
+    }
+
+    // Allow pressing Enter in the TOTP input
+    document.getElementById('totpCode').addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') submitTwoFactor();
+    });
+
+    // ── Password strength checker ──────────────────────────────────────────────
+    function checkStrength(pwd) {
+        const checks = {
+            'req-len':   pwd.length >= 8,
+            'req-upper': /[A-Z]/.test(pwd),
+            'req-lower': /[a-z]/.test(pwd),
+            'req-num':   /\d/.test(pwd),
+            'req-spec':  /[!@#$%^&*()\-_=+\[\]{}|;:,.<>?/~`]/.test(pwd),
+        };
+        let score = 0;
+        for (const [id, ok] of Object.entries(checks)) {
+            const li = document.getElementById(id);
+            if (li) {
+                const icon = li.querySelector('i');
+                icon.className = ok
+                    ? 'fas fa-check-circle text-green-500 text-xs'
+                    : 'fas fa-circle text-gray-300 text-xs';
+                if (ok) score++;
+            }
+        }
+        const bar   = document.getElementById('strengthBar');
+        const label = document.getElementById('strengthLabel');
+        const pct   = (score / 5) * 100;
+        bar.style.width = pct + '%';
+        if (score <= 2)      { bar.style.backgroundColor = '#ef4444'; label.textContent = 'Weak'; }
+        else if (score <= 3) { bar.style.backgroundColor = '#f59e0b'; label.textContent = 'Moderate'; }
+        else if (score <= 4) { bar.style.backgroundColor = '#3b82f6'; label.textContent = 'Good'; }
+        else                 { bar.style.backgroundColor = '#22c55e'; label.textContent = 'Strong'; }
+        return score === 5;
+    }
+
+    document.getElementById('newPassword')?.addEventListener('input', function () {
+        checkStrength(this.value);
+    });
+
+    // ── Change-password form ───────────────────────────────────────────────────
+    document.getElementById('changePasswordForm')?.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const newPwd  = document.getElementById('newPassword').value;
+        const confirm = document.getElementById('confirmPassword').value;
+        const errEl   = document.getElementById('cpErrorAlert');
+        errEl.classList.add('hidden');
+
+        if (!checkStrength(newPwd)) {
+            errEl.textContent = 'Password does not meet all requirements.';
+            errEl.classList.remove('hidden');
+            return;
+        }
+        if (newPwd !== confirm) {
+            errEl.textContent = 'Passwords do not match.';
+            errEl.classList.remove('hidden');
+            return;
+        }
+
+        const btn     = document.getElementById('cpBtn');
+        const spinner = document.getElementById('cpSpinner');
+        const btnText = document.getElementById('cpBtnText');
+        btn.disabled = true;
+        spinner.classList.remove('hidden');
+        btnText.textContent = 'Updating…';
+
+        try {
+            const at = sessionStorage.getItem('hc_at') || '';
+            const resp = await API('/api/auth/change-password', {
+                method: 'POST',
+                headers: {
+                    'Content-Type':  'application/json',
+                    'Authorization': `Bearer ${at}`,
+                },
+                body: JSON.stringify({
+                    current_password: document.getElementById('password').value,
+                    new_password:     newPwd,
+                }),
+            });
+            const data = await resp.json();
+            if (!data.success) {
+                errEl.textContent = data.error || 'Failed to update password.';
+                errEl.classList.remove('hidden');
+                return;
+            }
+            sessionStorage.clear();
+            // Show login form again so user re-authenticates with new password
+            document.getElementById('changePasswordCard').classList.add('hidden');
+            document.getElementById('loginCard').classList.remove('hidden');
+            showSuccess('Password updated! Please sign in with your new password.');
+            document.getElementById('password').value = '';
+        } catch (err) {
+            errEl.textContent = 'Network error. Please try again.';
+            errEl.classList.remove('hidden');
+        } finally {
+            btn.disabled = false;
+            spinner.classList.add('hidden');
+            btnText.textContent = 'Set New Password';
+        }
+    });
+
+    // ── If this tab already has an active session, skip the login page ──────────
+    // Uses sessionStorage (tab-scoped) — opening a new tab always shows login,
+    // allowing multiple users to be authenticated simultaneously in one browser.
+    (async function checkExistingSession() {
+        const existingRT = sessionStorage.getItem('hc_rt');
+        if (!existingRT) return; // fresh tab — show the login form
+
+        try {
+            const resp = await API('/api/auth/refresh', {
+                method:  'POST',
+                headers: { 'Content-Type': 'application/json', 'X-Refresh-Token': existingRT },
+            });
+            if (resp.ok) {
+                const data = await resp.json();
+                if (data.success) {
+                    sessionStorage.setItem('hc_at',   data.access_token);
+                    sessionStorage.setItem('hc_user', JSON.stringify(data.user));
+                    if (data.refresh_token) sessionStorage.setItem('hc_rt', data.refresh_token);
+                    _redirectAfterLogin(data.user);
+                } else {
+                    sessionStorage.removeItem('hc_rt');
+                }
+            } else {
+                sessionStorage.removeItem('hc_rt');
+            }
+        } catch (_) { sessionStorage.removeItem('hc_rt'); }
+    })();
+    </script>
+</body>
+</html>

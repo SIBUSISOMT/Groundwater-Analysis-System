@@ -4,11 +4,76 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Failure Analysis Dashboard</title>
+    <!-- Auth guard: hide body until authentication is confirmed -->
+    <style>body { display: none; }</style>
+    <script src="/frontend/src/auth.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <script src="https://cdnjs.cloudflare.com/ajax/libs/html2pdf.js/0.10.1/html2pdf.bundle.min.js"></script>
     
     <style>
+        /* ── Shared sidebar styles ───────────────────────────────────────── */
+        .enhanced-sidebar {
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.12);
+        }
+        .sidebar-header {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            position: relative; overflow: hidden;
+        }
+        .sidebar-header::before {
+            content: ''; position: absolute; top: -50%; right: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: sidebarRotate 20s linear infinite;
+        }
+        @keyframes sidebarRotate { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        .logo-container { position: relative; z-index: 1; }
+        .logo-icon {
+            background: rgba(255,255,255,0.2); backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1); transition: all 0.3s ease;
+        }
+        .nav-item {
+            position: relative; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); overflow: hidden;
+        }
+        .nav-item::before {
+            content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 4px;
+            background: linear-gradient(180deg,#3b82f6,#8b5cf6);
+            transform: scaleY(0); transition: transform 0.3s ease;
+        }
+        .nav-item:hover::before, .nav-item.active::before { transform: scaleY(1); }
+        .nav-item.active {
+            background: linear-gradient(90deg,rgba(59,130,246,0.15) 0%,rgba(59,130,246,0.05) 100%);
+        }
+        .nav-item:hover { background: rgba(59,130,246,0.08); transform: translateX(4px); }
+        .nav-icon { transition: all 0.3s ease; filter: drop-shadow(0 0 8px rgba(59,130,246,0)); }
+        .nav-item:hover .nav-icon, .nav-item.active .nav-icon {
+            filter: drop-shadow(0 0 8px rgba(59,130,246,0.6)); transform: scale(1.1);
+        }
+        .nav-divider {
+            height: 1px;
+            background: linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.1) 50%,transparent 100%);
+            margin: 16px 0;
+        }
+        .nav-section-label {
+            color: rgba(255,255,255,0.4); font-size: 0.75rem; font-weight: 600;
+            text-transform: uppercase; letter-spacing: 0.1em;
+            padding: 0 16px; margin-top: 24px; margin-bottom: 8px;
+        }
+        /* ── Shared header styles ──────────────────────────────────────── */
+        .enhanced-header {
+            background: linear-gradient(135deg,#ffffff 0%,#f8fafc 100%);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        }
+        .header-button {
+            position: relative; overflow: hidden;
+            transition: all 0.3s cubic-bezier(0.4,0,0.2,1);
+        }
+        .header-button:hover { transform: translateY(-2px); box-shadow: 0 6px 20px rgba(59,130,246,0.3); }
+        .refresh-icon { transition: transform 0.6s ease; }
+        .header-button:hover .refresh-icon { transform: rotate(360deg); }
+
         @keyframes slideDown {
             from { opacity: 0; transform: translateY(-20px); }
             to { opacity: 1; transform: translateY(0); }
@@ -298,34 +363,98 @@
 }
     </style>
 </head>
-<body class="bg-gray-50">
-    <!-- Header -->
-    <header class="gradient-bg text-white shadow-lg no-print">
-        <div class="container mx-auto px-6 py-6">
-            <div class="flex items-center justify-between">
-                <div>
-                    <h1 class="text-3xl font-bold flex items-center">
-                        <i class="fas fa-chart-line mr-3"></i>
-                        Failure Analysis Dashboard
-                    </h1>
-                    <p class="text-blue-100 mt-2">Comprehensive groundwater system failure monitoring & analysis</p>
+<body class="bg-gray-50 font-sans">
+
+    <!-- ═══════════════════════════════════════════════════════════
+         SIDEBAR (shared with Dashboard & Reports)
+    ════════════════════════════════════════════════════════════ -->
+    <div class="enhanced-sidebar fixed left-0 top-0 h-full w-64 z-30 no-print flex flex-col">
+        <div class="sidebar-header flex items-center px-6 py-5 border-b border-white border-opacity-10">
+            <div class="logo-container flex items-center">
+                <div class="flex-shrink-0 mr-3" style="width:44px;height:44px;background:white;border-radius:10px;padding:4px;overflow:hidden;">
+                    <img src="/images/ChatGPT%20Image%20Apr%2023,%202026,%2010_17_41%20AM.png" alt="HydroCore" style="width:100%;height:100%;object-fit:contain;border-radius:6px;">
                 </div>
-                <div class="flex items-center gap-3">
-                    <button onclick="window.location.href='index.html'" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
-                        <i class="fas fa-home mr-2"></i>Dashboard
-                    </button>
-                    <button onclick="window.location.href='reports.html'" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
-                        <i class="fas fa-file-alt mr-2"></i>Reports
-                    </button>
-                    <button id="refreshBtn" class="bg-white bg-opacity-20 hover:bg-opacity-30 px-4 py-2 rounded-lg transition-all">
-                        <i class="fas fa-sync-alt mr-2"></i>Refresh
-                    </button>
+                <div>
+                    <h1 class="text-base font-bold text-white leading-tight">HydroCore</h1>
                 </div>
             </div>
         </div>
-    </header>
 
-    <div class="container mx-auto px-6 py-8">
+        <nav class="mt-6 overflow-y-auto flex-1 pb-4 px-3">
+            <div class="space-y-1">
+                <a href="/frontend/public/index.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-th-large mr-3 w-5 text-center"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/frontend/public/Reports.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-file-alt mr-3 w-5 text-center"></i>
+                    <span>Reports</span>
+                </a>
+                <a href="#"
+                   class="nav-item active flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-white">
+                    <i class="nav-icon fas fa-chart-line mr-3 w-5 text-center"></i>
+                    <span>Failure Analysis</span>
+                </a>
+                <a href="/frontend/public/upload.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-cloud-upload-alt mr-3 w-5 text-center"></i>
+                    <span>Data Source Upload</span>
+                </a>
+                <a href="/frontend/public/manage_users.html" data-show-for-role="admin"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white"
+                   style="display:none">
+                    <i class="nav-icon fas fa-users-cog mr-3 w-5 text-center"></i>
+                    <span>Manage Users</span>
+                </a>
+            </div>
+
+            <div class="nav-divider"></div>
+
+        </nav>
+        <div class="px-3 py-3 border-t border-white border-opacity-10 flex-shrink-0">
+            <button onclick="confirmLogout()"
+                    class="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs
+                           text-gray-400 hover:text-red-300 rounded-lg transition-all duration-200
+                           border border-white border-opacity-10 hover:border-red-500 hover:border-opacity-40
+                           hover:bg-red-900 hover:bg-opacity-30 group">
+                <i class="fas fa-sign-out-alt group-hover:text-red-400 transition-colors"></i>
+                <span>Sign Out</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- ═══════════════════════════════════════════════════════════
+         MAIN CONTENT
+    ════════════════════════════════════════════════════════════ -->
+    <div class="ml-64">
+        <!-- Sticky page header -->
+        <header class="enhanced-header sticky top-0 z-20 no-print">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div>
+                    <p class="text-sm text-gray-500">Comprehensive groundwater system failure monitoring &amp; analysis</p>
+                </div>
+                <div class="flex items-center space-x-3">
+                    <button id="refreshBtn"
+                            class="header-button p-2.5 text-gray-600 hover:text-blue-600 rounded-xl
+                                   hover:bg-blue-50 transition-all" title="Refresh Data">
+                        <i class="fas fa-sync-alt refresh-icon"></i>
+                    </button>
+                    <div class="flex items-center gap-2.5 pl-1 pr-3 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm cursor-default">
+                        <div id="headerUserAvatar"
+                             class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600
+                                    flex items-center justify-center text-white text-xs font-bold flex-shrink-0">U</div>
+                        <div class="text-left min-w-0">
+                            <div id="headerUsername" class="text-sm font-semibold text-gray-800 leading-tight truncate" style="max-width:130px;">Loading…</div>
+                            <div id="headerRole" class="text-xs text-blue-600 leading-tight capitalize">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <div class="px-6 py-8">
         <!-- Quick Actions Bar -->
         <div class="bg-white rounded-lg shadow-sm border p-4 mb-6 no-print animate-slide-down">
             <div class="flex items-center justify-between flex-wrap gap-3">
@@ -446,67 +575,7 @@
     </div>
 </div>
 
- <!-- Data Upload Section -->
-<div class="bg-white rounded-lg shadow-sm border p-6 mb-6 no-print animate-slide-down">
-    <div class="flex items-center justify-between mb-4">
-        <h3 class="text-lg font-semibold flex items-center">
-            <i class="fas fa-upload text-blue-600 mr-2"></i>
-            Upload Data Source
-        </h3>
-        <button id="toggleUploadBtn" class="text-sm text-blue-600 hover:text-blue-800">
-            <i class="fas fa-chevron-down mr-1"></i>Show Upload Form
-        </button>
-    </div>
-    
-    <div id="uploadFormSection" class="hidden">
-        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Category</label>
-                <select id="categorySelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-                    <option value="">Select Category</option>
-                    <option value="BASEFLOW">Baseflow</option>
-                    <option value="RECHARGE">Recharge</option>
-                    <option value="GWLEVEL">Groundwater Level</option>
-                </select>
-            </div>
-            <div>
-                <label class="block text-sm font-medium text-gray-700 mb-2">Subcatchment</label>
-               <select id="subcatchmentSelect" class="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500">
-    <option value="">Select Subcatchment</option>
-    <option value="Assegai">Assegai</option>
-    <option value="Crocodile">Crocodile</option>
-    <option value="Lower Komati">Lower Komati</option>
-    <option value="Ngwempisi">Ngwempisi</option>
-    <option value="Sabie">Sabie</option>
-    <option value="Sand">Sand</option>
-    <option value="Upper Komati">Upper Komati</option>
-</select>
-            </div>
-            <div class="flex items-end">
-                <div id="dropZone" class="w-full px-4 py-8 border-2 border-dashed border-gray-300 rounded-lg text-center cursor-pointer hover:border-blue-400 hover:bg-blue-50 transition-all">
-                    <i class="fas fa-cloud-upload-alt text-3xl text-gray-400 mb-2"></i>
-                    <p class="text-sm text-gray-600">Click or drag Excel file here</p>
-                    <p class="text-xs text-gray-500 mt-1">Supported: .xlsx, .xls</p>
-                    <input type="file" id="fileInput" accept=".xlsx,.xls" class="hidden">
-                </div>
-            </div>
-        </div>
-    </div>
-    
-    <!-- Data Sources Table - Always Visible -->
-    <div class="mt-6">
-        <h4 class="text-md font-semibold mb-3 flex items-center">
-            <i class="fas fa-database text-gray-600 mr-2"></i>
-            Uploaded Data Sources
-        </h4>
-        <div id="dataSourcesTable" class="overflow-x-auto bg-gray-50 rounded-lg p-4">
-            <div class="text-center py-8 text-gray-500">
-                <i class="fas fa-database text-4xl mb-4"></i>
-                <p>Loading data sources...</p>
-            </div>
-        </div>
-    </div>
-</div>
+ <!-- Upload moved to dedicated page: /frontend/public/upload.html -->
 
         <!-- Advanced Filters Panel -->
         <div id="filtersPanel" class="bg-white rounded-lg shadow-sm border p-6 mb-6 hidden no-print animate-slide-down">
@@ -668,6 +737,109 @@
     <!-- Toast Container -->
     <div id="toastContainer" class="fixed top-4 right-4 z-40 space-y-2"></div>
 
+        </div><!-- /.px-6.py-8 -->
+
+        <!-- ═══════════════════════════════════════════════════════
+             FOOTER
+        ════════════════════════════════════════════════════════ -->
+        <footer class="no-print border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white mt-8">
+            <div class="px-8 py-5">
+                <div class="flex flex-col lg:flex-row items-center justify-between gap-5">
+
+                    <!-- Branding -->
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl
+                                    flex items-center justify-center shadow-md">
+                            <i class="fas fa-tint text-white text-sm"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-800 leading-tight">HydroCore v2.0</p>
+                            <p class="text-xs text-gray-500">National Groundwater Analysis Platform</p>
+                        </div>
+                    </div>
+
+                    <!-- Credits -->
+                    <div class="flex flex-col items-center gap-1.5 text-center">
+                        <div class="flex items-center gap-6">
+                            <div class="flex flex-col items-center">
+                                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Idea Owner</span>
+                                <span class="text-sm font-medium text-gray-700">Dr T. Shakhane</span>
+                            </div>
+                            <div class="h-8 w-px bg-gray-200"></div>
+                            <div class="flex flex-col items-center">
+                                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Systems Engineer</span>
+                                <span class="text-sm font-medium text-gray-700">Sibusiso Mathonsi</span>
+                            </div>
+                        </div>
+                        <p class="text-xs text-gray-400 mt-0.5">
+                            Methodology by Shakhane <em>et al.</em> &middot; South African River Catchments
+                        </p>
+                    </div>
+
+                    <!-- Legal -->
+                    <div class="text-center lg:text-right">
+                        <p class="text-sm font-medium text-gray-600">
+                            &copy; <span class="footer-year"></span> HydroCore. All rights reserved.
+                        </p>
+                        <p class="text-xs text-gray-400 mt-0.5">For research &amp; institutional use only.</p>
+                        <p class="text-xs text-gray-400">Unauthorised distribution is prohibited.</p>
+                    </div>
+                </div>
+
+                <!-- Bottom rule -->
+                <div class="mt-4 pt-3 border-t border-gray-100 text-center">
+                    <p class="text-xs text-gray-400">
+                        <i class="fas fa-shield-alt mr-1 text-blue-400"></i>
+                        Enterprise-grade security &middot; JWT-authenticated &middot; Data encrypted in transit
+                    </p>
+                </div>
+            </div>
+        </footer>
+
+    </div><!-- /.ml-64 -->
+
     <script src="/frontend/src/failure-analysis.js"></script>
+    <script>document.querySelectorAll('.footer-year').forEach(el => el.textContent = new Date().getFullYear());</script>
+
+<!-- Logout Confirmation Modal -->
+<div id="logoutModal"
+     class="fixed inset-0 bg-black bg-opacity-60 z-[9999] hidden items-center justify-center"
+     onclick="if(event.target===this){this.classList.add('hidden');this.classList.remove('flex');}">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div class="bg-gradient-to-r from-red-500 to-rose-600 px-6 py-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-sign-out-alt text-white text-lg"></i>
+                </div>
+                <div>
+                    <h3 class="text-white font-bold text-lg">Sign Out</h3>
+                    <p class="text-red-100 text-xs mt-0.5">HydroCore — Active Session</p>
+                </div>
+            </div>
+        </div>
+        <div class="px-6 py-5">
+            <p class="text-gray-700 text-sm leading-relaxed">
+                Are you sure you want to sign out? Your current session will end and you will need to log in again to access HydroCore.
+            </p>
+        </div>
+        <div class="px-6 pb-5 flex gap-3">
+            <button onclick="document.getElementById('logoutModal').classList.add('hidden');document.getElementById('logoutModal').classList.remove('flex');"
+                    class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all font-medium text-sm">
+                Cancel
+            </button>
+            <button onclick="HydroAuth.logout()"
+                    class="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-semibold text-sm flex items-center justify-center gap-2">
+                <i class="fas fa-sign-out-alt"></i> Yes, Sign Out
+            </button>
+        </div>
+    </div>
+</div>
+<script>
+function confirmLogout() {
+    const m = document.getElementById('logoutModal');
+    m.classList.remove('hidden');
+    m.classList.add('flex');
+}
+</script>
 </body>
 </html>

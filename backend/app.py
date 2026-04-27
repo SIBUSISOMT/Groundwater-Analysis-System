@@ -10,13 +10,28 @@ from io import StringIO, BytesIO
 import pandas as pd
 import numpy as np
 import pyodbc
-from flask import Flask, jsonify, request, send_file
+from flask import Flask, g, jsonify, request, send_file, send_from_directory, redirect
+from werkzeug.utils import secure_filename
 from flask_cors import CORS
+from flask_limiter import Limiter
+from flask_limiter.util import get_remote_address
 
 
 app = Flask(__name__)
-CORS(app)
+
+# ── CORS — allow Flask origin + common Live Server ports for development ──────
+_allowed_origins = os.getenv(
+    'ALLOWED_ORIGINS',
+    'http://localhost:5000,http://127.0.0.1:5000,'
+    'http://localhost:5500,http://127.0.0.1:5500,'
+    'http://localhost:5501,http://127.0.0.1:5501,'
+    'http://localhost:5127,http://127.0.0.1:5127'
+).split(',')
+CORS(app, origins=_allowed_origins, supports_credentials=True)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max
+
+# ── Rate limiter ───────────────────────────────────────────────────────────────
+limiter = Limiter(key_func=get_remote_address, app=app, default_limits=[])
 
 # Configure logging
 logging.basicConfig(
@@ -150,23 +165,24 @@ class Database:
         """Insert data into RawData table"""
         query = """
         INSERT INTO dbo.RawData (
-            source_id, catchment_id, measurement_date, category, 
-            original_sheet_name,
-            recharge_inches, recharge_converted, average_recharge, 
+            source_id, catchment_id, measurement_date, category,
+            original_sheet_name, org_id,
+            recharge_inches, recharge_converted, average_recharge,
             recharge_stdev, drought_index_recharge, recharge_deviation,
-            baseflow_value, average_baseflow, baseflow_stdev, 
+            baseflow_value, average_baseflow, baseflow_stdev,
             standardized_baseflow, baseflow_deviation,
-            gw_level, average_gw_level, gw_level_stdev, 
+            gw_level, average_gw_level, gw_level_stdev,
             standardized_gw_level, gw_level_deviation
-        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """
-        
+
         params = (
             values.get('source_id'),
             values.get('catchment_id'),
             values.get('measurement_date'),
             values.get('category'),
             values.get('original_sheet_name'),
+            values.get('org_id'),
             values.get('recharge_inches'),
             values.get('recharge_converted'),
             values.get('average_recharge'),
@@ -184,7 +200,7 @@ class Database:
             values.get('standardized_gw_level'),
             values.get('gw_level_deviation')
         )
-        
+
         try:
             self.execute_query(query, params, fetch=False)
             logger.debug(f"Inserted raw data record for {values.get('category')}")
@@ -206,21 +222,23 @@ class Database:
     
     # ADD THESE MISSING METHODS:
     
-    def create_data_source(self, file_name, category, subcatchment_name=None):
-        """Create data source record - FIXED VERSION"""
+    def create_data_source(self, file_name, category, subcatchment_name=None,
+                           uploaded_by=None, org_id=None):
+        """Create data source record"""
         conn = None
         try:
             conn = self.connect()
             cursor = conn.cursor()
 
-            logger.info(f"Attempting INSERT: file_name={file_name}, category={category}, subcatchment={subcatchment_name}")
+            logger.info(f"Attempting INSERT: file_name={file_name}, category={category}, "
+                        f"subcatchment={subcatchment_name}, org_id={org_id}")
 
-            # Insert the record and get the ID in one statement using OUTPUT clause
             cursor.execute("""
-                INSERT INTO dbo.DataSources (file_name, category, subcatchment_name, processing_status)
+                INSERT INTO dbo.DataSources
+                    (file_name, category, subcatchment_name, processing_status, uploaded_by, org_id)
                 OUTPUT INSERTED.source_id
-                VALUES (?, ?, ?, 'Processing')
-            """, (file_name, category, subcatchment_name))
+                VALUES (?, ?, ?, 'Processing', ?, ?)
+            """, (file_name, category, subcatchment_name, uploaded_by, org_id))
 
             # Fetch the returned source_id
             result = cursor.fetchone()
@@ -288,6 +306,101 @@ DB_CONFIG = {
 }
 
 db = Database(**DB_CONFIG)
+
+import re as _re
+
+def _exec(query, params=None, **kw):
+    """
+    Thin wrapper around db.execute_query that gracefully handles the case where
+    the tenant-isolation migration hasn't been applied yet (org_id / uploaded_by
+    columns missing).  Strips those clauses and retries so read routes stay
+    functional.  Write routes (INSERT with org_id) must NOT use this helper.
+    """
+    try:
+        return db.execute_query(query, params, **kw)
+    except Exception as e:
+        err = str(e)
+        if '42S22' not in err:
+            raise
+        missing = err.lower()
+        if 'org_id' in missing or 'uploaded_by' in missing:
+            q = query
+            # Strip WHERE / AND org_id filter (org_id is always the 1st param)
+            q = _re.sub(r'WHERE\s+(?:\w+\.)?org_id\s*=\s*\?', 'WHERE 1=1', q, flags=_re.IGNORECASE)
+            q = _re.sub(r'AND\s+(?:\w+\.)?org_id\s*=\s*\?',   '',           q, flags=_re.IGNORECASE)
+            # Strip LEFT JOIN on dbo.Users via uploaded_by and the username column
+            q = _re.sub(r'LEFT\s+JOIN\s+dbo\.Users\s+\w+\s+ON\s+\w+\.uploaded_by\s*=\s*\w+\.\w+', '', q, flags=_re.IGNORECASE)
+            q = _re.sub(r',?\s*ISNULL\(\w+\.username\s*,\s*\'system\'\)\s+as\s+uploaded_by_username', '', q, flags=_re.IGNORECASE)
+            # Remove the org_id param (always first in params)
+            p = list(params)[1:] if params else None
+            logger.warning("Tenant migration pending — running without org_id/uploaded_by filter")
+            return db.execute_query(q, p if p else None, **kw)
+        raise
+
+# ── Auth initialisation ────────────────────────────────────────────────────────
+from auth import auth_bp, init_auth, require_auth, _audit as audit_log
+init_auth(app, db, limiter)
+app.register_blueprint(auth_bp)
+
+# ── System admin blueprint ─────────────────────────────────────────────────────
+from admin_bp import admin_bp as _admin_bp, init_admin as _init_admin
+_init_admin(db)
+app.register_blueprint(_admin_bp)
+
+# ── Serve frontend static files from Flask (same origin as API) ───────────────
+_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend')
+
+@app.route('/')
+def root():
+    return redirect('/frontend/public/login.html')
+
+@app.route('/frontend/<path:filename>')
+def serve_frontend(filename):
+    return send_from_directory(_FRONTEND_DIR, filename)
+
+_IMAGES_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'images')
+
+@app.route('/images/<path:filename>')
+def serve_images(filename):
+    return send_from_directory(_IMAGES_DIR, filename)
+
+# ── CORS + Security headers ────────────────────────────────────────────────────
+@app.after_request
+def add_security_headers(response):
+    # Re-enforce CORS on every response (including 4xx/5xx that Flask-CORS may miss)
+    origin = request.headers.get('Origin', '')
+    if origin in _allowed_origins:
+        response.headers['Access-Control-Allow-Origin']      = origin
+        response.headers['Access-Control-Allow-Credentials'] = 'true'
+        response.headers['Access-Control-Allow-Methods']     = 'GET, POST, PUT, DELETE, OPTIONS'
+        response.headers['Access-Control-Allow-Headers']     = (
+            'Content-Type, Authorization, X-Refresh-Token'
+        )
+
+    response.headers['X-Content-Type-Options']  = 'nosniff'
+    response.headers['X-Frame-Options']          = 'SAMEORIGIN'
+    response.headers['X-XSS-Protection']         = '1; mode=block'
+    response.headers['Referrer-Policy']           = 'strict-origin-when-cross-origin'
+    if os.getenv('FLASK_ENV') == 'production':
+        response.headers['Strict-Transport-Security'] = 'max-age=31536000; includeSubDomains'
+    return response
+
+# Handle pre-flight OPTIONS requests (needed for cross-origin POST/PUT/DELETE)
+@app.before_request
+def handle_options():
+    if request.method == 'OPTIONS':
+        origin = request.headers.get('Origin', '')
+        if origin in _allowed_origins:
+            from flask import make_response as _mr
+            resp = _mr('', 204)
+            resp.headers['Access-Control-Allow-Origin']      = origin
+            resp.headers['Access-Control-Allow-Credentials'] = 'true'
+            resp.headers['Access-Control-Allow-Methods']     = 'GET, POST, PUT, DELETE, OPTIONS'
+            resp.headers['Access-Control-Allow-Headers']     = (
+                'Content-Type, Authorization, X-Refresh-Token'
+            )
+            resp.headers['Access-Control-Max-Age']           = '600'
+            return resp
 
 # ============================================================================
 # CUSTOM EXCEPTION CLASS
@@ -422,6 +535,52 @@ COLUMN_MAPPING = {
 }
 
 # ============================================================================
+# TENANT ISOLATION HELPERS
+# ============================================================================
+
+def _get_source_access(source_id):
+    """Return (org_id, uploaded_by) for a source, or None if not found."""
+    try:
+        rows = db.execute_query(
+            "SELECT org_id, uploaded_by FROM dbo.DataSources WHERE source_id = ?",
+            (source_id,)
+        )
+        if not rows:
+            return None
+        return rows[0][0], rows[0][1]
+    except Exception as e:
+        if '42S22' in str(e) and 'org_id' in str(e).lower():
+            rows = db.execute_query(
+                "SELECT 1 FROM dbo.DataSources WHERE source_id = ?", (source_id,)
+            )
+            return (1, None) if rows else None
+        raise
+
+
+def _check_source_access(source_id, require_uploader=False):
+    """
+    Verify the current user may access a source.
+    Returns a Flask error response tuple, or None if access is permitted.
+    - Always 404 when the source belongs to a different org (no info leak).
+    - When require_uploader=True, analysts may only act on their own uploads.
+    """
+    from flask import g as _g
+    access = _get_source_access(source_id)
+    if not access:
+        return jsonify({'success': False, 'error': 'Source not found'}), 404
+    source_org_id, uploaded_by = access
+    if source_org_id != _g.current_user_org_id:
+        return jsonify({'success': False, 'error': 'Source not found'}), 404
+    if require_uploader and _g.current_user_role == 'analyst':
+        if uploaded_by != _g.current_user_id:
+            return jsonify({
+                'success': False,
+                'error': 'Analysts may only modify their own uploads.'
+            }), 403
+    return None
+
+
+# ============================================================================
 # API ROUTES
 # ============================================================================
 
@@ -447,8 +606,17 @@ def health_check():
     
 
 @app.route('/api/upload', methods=['POST'])
+@require_auth(roles=['admin', 'analyst'])
 def upload_file():
     """File upload endpoint with full processing"""
+    from flask import g as _g
+    if getattr(_g, 'current_user_plan', 'basic') == 'basic':
+        return jsonify({
+            'success': False,
+            'error': 'Excel upload requires a Pro plan. Upgrade your plan to access this feature.',
+            'error_code': 'PLAN_RESTRICTED',
+        }), 403
+
     logger.info("Upload request received")
     
     try:
@@ -484,8 +652,13 @@ def upload_file():
             logger.info(f"File saved: {filepath}")
         
         # ========== STEP 4: Create data source record WITH SUBCATCHMENT ==========
+        safe_name = secure_filename(file.filename) or 'upload.xlsx'
         try:
-            source_id = db.create_data_source(file.filename, category, subcatchment)  # ✅ ADDED subcatchment
+            source_id = db.create_data_source(
+                safe_name, category, subcatchment,
+                uploaded_by=g.current_user_id,
+                org_id=g.current_user_org_id,
+            )
             if not source_id:
                 logger.error("create_data_source returned None")
                 return jsonify(get_error_response(
@@ -575,7 +748,8 @@ def upload_file():
                     'catchment_id': catchment_id,
                     'measurement_date': parsed_date,
                     'category': category.lower(),
-                    'original_sheet_name': subcatchment
+                    'original_sheet_name': subcatchment,
+                    'org_id': g.current_user_org_id,
                 }
                 
                 # ===== CATEGORY-SPECIFIC DATA EXTRACTION =====
@@ -739,29 +913,32 @@ def upload_file():
         )), 500
 
 @app.route('/api/filter-options', methods=['GET'])
+@require_auth()
 def get_filter_options():
     """Get available catchments and parameters with actual data"""
     try:
-        # Get catchments that actually have data in ProcessedData
+        # Get catchments that have data for this org
         catchment_query = """
-        SELECT DISTINCT c.catchment_id, c.catchment_name 
+        SELECT DISTINCT c.catchment_id, c.catchment_name
         FROM dbo.Catchments c
         INNER JOIN dbo.ProcessedData pd ON c.catchment_id = pd.catchment_id
+        WHERE pd.org_id = ?
         ORDER BY c.catchment_name
         """
-        catchment_results = db.execute_query(catchment_query)
-        
+        catchment_results = _exec(catchment_query, (g.current_user_org_id,))
+
         catchments = []
         for row in catchment_results:
-            catchments.append(row[1])  # Just return the names as strings
-        
-        # Get parameters that have data
+            catchments.append(row[1])
+
+        # Get parameters that have data for this org
         param_query = """
         SELECT DISTINCT LOWER(parameter_type) as parameter
         FROM dbo.ProcessedData
+        WHERE org_id = ?
         ORDER BY parameter
         """
-        param_results = db.execute_query(param_query)
+        param_results = _exec(param_query, (g.current_user_org_id,))
         parameters = [row[0] for row in param_results] if param_results else []
         
         return jsonify({
@@ -785,6 +962,7 @@ def get_filter_options():
 
 
 @app.route('/api/detailed-records', methods=['GET'])
+@require_auth()
 def get_detailed_records():
     """Get detailed data records for reports page - NEW ENDPOINT"""
     try:
@@ -810,18 +988,18 @@ def get_detailed_records():
             pd.std_deviation
         FROM dbo.ProcessedData pd
         INNER JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
-        WHERE 1=1
+        WHERE pd.org_id = ?
         """
-        params = []
-        
+        params = [g.current_user_org_id]
+
         if catchment:
             query += " AND c.catchment_name = ?"
             params.append(catchment)
-        
+
         if parameter:
             query += " AND LOWER(pd.parameter_type) = ?"
             params.append(parameter.lower())
-        
+
         if start_date:
             query += " AND CAST(pd.measurement_date AS DATE) >= ?"
             params.append(start_date)
@@ -832,7 +1010,7 @@ def get_detailed_records():
 
         query += " ORDER BY pd.measurement_date DESC"
 
-        results = db.execute_query(query, params if params else None)
+        results = _exec(query, params if params else None)
 
         # Format results
         records = []
@@ -868,6 +1046,7 @@ def get_detailed_records():
         }), 200
 
 @app.route('/api/data', methods=['GET'])
+@require_auth()
 def get_data():
     """Get processed data with optional filters - FRONTEND COMPATIBLE"""
     try:
@@ -884,7 +1063,7 @@ def get_data():
             parameter = parameter_type
         
         query = """
-        SELECT 
+        SELECT
             pd.processed_id,
             pd.measurement_date,
             c.catchment_name,
@@ -899,23 +1078,22 @@ def get_data():
             pd.created_at
         FROM dbo.ProcessedData pd
         INNER JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
-        WHERE 1=1
+        WHERE pd.org_id = ?
         """
-        params = []
-        
+        params = [g.current_user_org_id]
+
         logger.info(f"[DATA] Filters: catchment={catchment}, parameter={parameter}, start={start_date}, end={end_date}")
-        
-        # Add filters
+
         if catchment:
             query += " AND c.catchment_name = ?"
             params.append(catchment)
             logger.info(f"[DATA] Added catchment filter: {catchment}")
-        
+
         if parameter:
             query += " AND LOWER(pd.parameter_type) = ?"
             params.append(parameter.lower())
             logger.info(f"[DATA] Added parameter filter: {parameter}")
-        
+
         if start_date:
             query += " AND CAST(pd.measurement_date AS DATE) >= ?"
             params.append(start_date)
@@ -925,14 +1103,14 @@ def get_data():
             query += " AND CAST(pd.measurement_date AS DATE) <= ?"
             params.append(end_date)
             logger.info(f"[DATA] Added end_date filter: {end_date}")
-        
+
         query += " ORDER BY pd.measurement_date DESC"
         
         logger.info(f"[DATA] Full query: {query}")
         
         # Execute query
-        results = db.execute_query(query, params if params else None)
-        
+        results = _exec(query, params if params else None)
+
         logger.info(f"[DATA] Query returned {len(results) if results else 0} rows")
         
         # Format results - MATCH FRONTEND EXPECTATIONS
@@ -975,6 +1153,7 @@ def get_data():
         }), 500
 
 @app.route('/api/export', methods=['GET'])
+@require_auth()
 def export_data():
     """Export data to CSV"""
     try:
@@ -983,23 +1162,22 @@ def export_data():
         parameter_type = request.args.get('parameter_type')
         format_type = request.args.get('format', 'csv')
         
-        # Build query
-        query = "SELECT * FROM dbo.ProcessedData WHERE 1=1"
-        params = []
-        
+        # Build query — always scope to caller's org
+        query = "SELECT * FROM dbo.ProcessedData WHERE org_id = ?"
+        params = [g.current_user_org_id]
+
         if catchment_id:
             query += " AND catchment_id = ?"
             params.append(catchment_id)
-        
+
         if parameter_type:
             query += " AND LOWER(parameter_type) = ?"
             params.append(parameter_type.lower())
-        
+
         query += " ORDER BY measurement_date DESC"
-        
-        # Execute query
-        results = db.execute_query(query, params if params else None)
-        
+
+        results = _exec(query, params)
+
         if not results:
             return jsonify({'error': 'No data to export'}), 404
         
@@ -1036,23 +1214,24 @@ def export_data():
     
 
 @app.route('/api/catchments', methods=['GET'])
+@require_auth()
 def get_catchments():
     """Get all available catchments with record counts from ProcessedData"""
     try:
         query = """
-        SELECT 
+        SELECT
             c.catchment_id,
             c.catchment_name,
             COUNT(DISTINCT pd.processed_id) as total_records
         FROM dbo.Catchments c
-        LEFT JOIN dbo.ProcessedData pd ON c.catchment_id = pd.catchment_id
+        INNER JOIN dbo.ProcessedData pd ON c.catchment_id = pd.catchment_id
+        WHERE pd.org_id = ?
         GROUP BY c.catchment_id, c.catchment_name
-        HAVING COUNT(DISTINCT pd.processed_id) > 0
         ORDER BY c.catchment_name
         """
-        
-        results = db.execute_query(query)
-        
+
+        results = _exec(query, (g.current_user_org_id,))
+
         catchments = []
         if results:
             for row in results:
@@ -1081,23 +1260,25 @@ def get_catchments():
     
 
 @app.route('/api/summary', methods=['GET'])
+@require_auth()
 def get_summary():
     """Get dashboard summary statistics - NEW ENDPOINT"""
     try:
-        # Total records
-        total_query = "SELECT COUNT(*) FROM dbo.ProcessedData"
-        total_result = db.execute_query(total_query)
+        # Total records for this org
+        total_query = "SELECT COUNT(*) FROM dbo.ProcessedData WHERE org_id = ?"
+        total_result = _exec(total_query, (g.current_user_org_id,))
         total_records = total_result[0][0] if total_result else 0
-        
-        # Failure stats
+
+        # Failure stats for this org
         failure_query = """
-        SELECT 
+        SELECT
             SUM(CASE WHEN is_failure = 1 THEN 1 ELSE 0 END),
             COUNT(DISTINCT catchment_id),
             AVG(CAST(severity_level AS FLOAT))
         FROM dbo.ProcessedData
+        WHERE org_id = ?
         """
-        failure_result = db.execute_query(failure_query)
+        failure_result = _exec(failure_query, (g.current_user_org_id,))
         
         failures = 0
         catchments = 0
@@ -1138,11 +1319,12 @@ def get_summary():
 
 
 @app.route('/api/sources', methods=['GET'])
+@require_auth()
 def get_sources():
     """Get list of all data sources"""
     try:
         query = """
-        SELECT 
+        SELECT
             ds.source_id,
             ds.file_name,
             ds.category,
@@ -1152,13 +1334,16 @@ def get_sources():
             ds.date_range_start,
             ds.date_range_end,
             ds.subcatchment_name,
-            ds.error_message
+            ds.error_message,
+            ISNULL(u.username, 'system') as uploaded_by_username
         FROM dbo.DataSources ds
+        LEFT JOIN dbo.Users u ON ds.uploaded_by = u.user_id
+        WHERE ds.org_id = ?
         ORDER BY ds.upload_date DESC
         """
-        
-        results = db.execute_query(query)
-        
+
+        results = _exec(query, (g.current_user_org_id,))
+
         sources = []
         if results:
             for row in results:
@@ -1172,7 +1357,8 @@ def get_sources():
                     'date_start': str(row[6]) if row[6] else None,
                     'date_end': str(row[7]) if row[7] else None,
                     'subcatchment_name': row[8],
-                    'error_message': row[9]
+                    'error_message': row[9],
+                    'uploaded_by': row[10] if len(row) > 10 else 'system',
                 })
         
         return jsonify({
@@ -1195,8 +1381,12 @@ def get_sources():
 
 
 @app.route('/api/sources/<int:source_id>/records', methods=['GET'])
+@require_auth()
 def get_source_records(source_id):
     """Return every ProcessedData row that belongs to a given source."""
+    err = _check_source_access(source_id)
+    if err:
+        return err
     try:
         query = """
         SELECT
@@ -1248,12 +1438,12 @@ def get_source_records(source_id):
 
 
 @app.route('/api/sources/<int:source_id>/records', methods=['PUT'])
+@require_auth(roles=['admin', 'analyst'])
 def update_source_records(source_id):
-    """
-    Accept a list of edited records, recompute all derived fields, and persist.
-    Payload: { "records": [ { "processed_id": 1, "measurement_date": "2022-10-01",
-                                "original_value": 1.23 }, ... ] }
-    """
+    """Edit records — admin can edit any org source, analyst only their own uploads."""
+    err = _check_source_access(source_id, require_uploader=True)
+    if err:
+        return err
     try:
         body = request.get_json(force=True)
         if not body or not isinstance(body.get('records'), list):
@@ -1340,8 +1530,12 @@ def update_source_records(source_id):
 
 
 @app.route('/api/sources/<int:source_id>/records', methods=['DELETE'])
+@require_auth(roles=['admin', 'analyst'])
 def delete_source_records(source_id):
-    """Delete specific ProcessedData rows by processed_id."""
+    """Delete records — admin can delete any org source, analyst only their own uploads."""
+    err = _check_source_access(source_id, require_uploader=True)
+    if err:
+        return err
     try:
         body = request.get_json(force=True, silent=True) or {}
         processed_ids = body.get('processed_ids', [])
@@ -1373,8 +1567,14 @@ def delete_source_records(source_id):
 
 
 @app.route('/api/sources/<int:source_id>', methods=['GET', 'DELETE'])
+@require_auth(roles=['admin', 'analyst'])
 def handle_source(source_id):
-    """Get source details or delete source"""
+    """Get source details or delete source."""
+    # GET: any org member may view; DELETE: admin or the uploader
+    require_uploader = (request.method == 'DELETE')
+    err = _check_source_access(source_id, require_uploader=require_uploader)
+    if err:
+        return err
     try:
         if request.method == 'GET':
             query = """
@@ -1414,16 +1614,6 @@ def handle_source(source_id):
                 }), 404
         
         elif request.method == 'DELETE':
-            # First check if source exists
-            check_query = "SELECT source_id FROM dbo.DataSources WHERE source_id = ?"
-            check_result = db.execute_query(check_query, (source_id,))
-            
-            if not check_result:
-                return jsonify({
-                    'success': False,
-                    'error': 'Source not found'
-                }), 404
-            
             # Delete in correct order due to foreign key constraints
             # 1. Delete ProcessedData
             delete_query = """
@@ -1454,6 +1644,7 @@ def handle_source(source_id):
         }), 500
 
 @app.route('/api/failure-analysis', methods=['GET'])
+@require_auth()
 def get_failure_analysis():
     """Get failure analysis with proper filtering - FIXED with DATE support"""
     try:
@@ -1469,27 +1660,26 @@ def get_failure_analysis():
         
         # Query to get failure analysis data
         query = """
-        SELECT 
+        SELECT
             c.catchment_name,
             pd.parameter_type,
             COUNT(*) as total_records,
             SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) as failure_count,
-            CAST(SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) AS FLOAT) / 
+            CAST(SUM(CASE WHEN pd.is_failure = 1 THEN 1 ELSE 0 END) AS FLOAT) /
                 NULLIF(COUNT(*), 0) * 100 as failure_rate,
             AVG(CAST(pd.severity_level AS FLOAT)) as avg_severity,
             MAX(pd.severity_level) as max_severity,
             MIN(pd.severity_level) as min_severity
         FROM dbo.ProcessedData pd
         INNER JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
-        WHERE 1=1
+        WHERE pd.org_id = ?
         """
-        params = []
-        
+        params = [g.current_user_org_id]
+
         if catchment:
             query += " AND c.catchment_name = ?"
             params.append(catchment)
-        
-        # FIXED: Accept 'category' parameter from frontend
+
         if param_filter:
             query += " AND LOWER(pd.parameter_type) = ?"
             params.append(param_filter.lower())
@@ -1510,8 +1700,8 @@ def get_failure_analysis():
         print(f"[DEBUG] Query: {query}")
         print(f"[DEBUG] Params: {params}")
         
-        results = db.execute_query(query, params if params else None)
-        
+        results = _exec(query, params if params else None)
+
         print(f"[DEBUG] Results count: {len(results) if results else 0}")
         
         analysis = []
@@ -1530,19 +1720,19 @@ def get_failure_analysis():
         
         # FIXED: Also apply filters to overall stats
         overall_query = """
-        SELECT 
+        SELECT
             COUNT(*) as total,
             SUM(CASE WHEN is_failure = 1 THEN 1 ELSE 0 END) as failures,
             COUNT(DISTINCT catchment_id) as catchments
         FROM dbo.ProcessedData
-        WHERE 1=1
+        WHERE org_id = ?
         """
-        overall_params = []
-        
+        overall_params = [g.current_user_org_id]
+
         if catchment:
             overall_query += " AND catchment_id = (SELECT catchment_id FROM dbo.Catchments WHERE catchment_name = ?)"
             overall_params.append(catchment)
-        
+
         if param_filter:
             overall_query += " AND LOWER(parameter_type) = ?"
             overall_params.append(param_filter.lower())
@@ -1556,7 +1746,7 @@ def get_failure_analysis():
             overall_query += " AND CAST(measurement_date AS DATE) <= ?"
             overall_params.append(end_date)
 
-        overall_results = db.execute_query(overall_query, overall_params if overall_params else None)
+        overall_results = _exec(overall_query, overall_params if overall_params else None)
         
         overall_stats = {}
         if overall_results:
@@ -1592,6 +1782,7 @@ def get_failure_analysis():
 
 
 @app.route('/api/metrics', methods=['GET'])
+@require_auth()
 def get_metrics():
     """
     Get water system performance metrics.
@@ -1709,10 +1900,10 @@ def get_metrics():
 
             FROM dbo.ProcessedData pd
             JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
-            WHERE 1=1
+            WHERE pd.org_id = ?
             """
-            
-            params = []
+
+            params = [g.current_user_org_id]
             
             # Add filters if provided
             if catchment:
@@ -1813,10 +2004,10 @@ def get_metrics():
 
             FROM dbo.ProcessedData pd
             JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
-            WHERE 1=1
+            WHERE pd.org_id = ?
             """
-            
-            params = []
+
+            params = [g.current_user_org_id]
             
             if catchment:
                 query += " AND LOWER(c.catchment_name) = LOWER(?)"
@@ -1842,10 +2033,10 @@ def get_metrics():
             query += " GROUP BY c.catchment_name, pd.parameter_type"
         
         # Execute query
-        results = db.execute_query(query, params if params else None)
-        
+        results = _exec(query, params if params else None)
+
         logger.info(f"[METRICS] Query returned {len(results) if results else 0} rows")
-        
+
         # Process results
         metrics = []
         if results:
@@ -1887,6 +2078,7 @@ def get_metrics():
 
 
 @app.route('/api/metrics-calculated', methods=['GET'])
+@require_auth()
 def get_metrics_calculated():
     """Get calculated performance metrics - RELIABILITY, RESILIENCE, VULNERABILITY, SUSTAINABILITY"""
     try:
@@ -1930,24 +2122,24 @@ def get_metrics_calculated():
             
         FROM dbo.ProcessedData pd
         JOIN dbo.Catchments c ON pd.catchment_id = c.catchment_id
-        WHERE 1=1
+        WHERE pd.org_id = ?
         """
-        params = []
-        
+        params = [g.current_user_org_id]
+
         logger.info(f"[METRICS] Request: catchment={catchment}, parameter={parameter}")
-        
+
         if catchment:
             query += " AND LOWER(c.catchment_name) = LOWER(?)"
             params.append(catchment)
-        
+
         if parameter:
             query += " AND LOWER(pd.parameter_type) = LOWER(?)"
             params.append(parameter)
         
         query += " GROUP BY c.catchment_name, pd.parameter_type"
-        
-        results = db.execute_query(query, params if params else None)
-        
+
+        results = _exec(query, params if params else None)
+
         logger.info(f"[METRICS] Query returned {len(results) if results else 0} rows")
         
         metrics = []
@@ -1984,6 +2176,7 @@ def get_metrics_calculated():
         }), 500
 
 @app.route('/api/export-enhanced', methods=['GET'])
+@require_auth()
 def export_data_enhanced():
     """Enhanced export with more options"""
     try:
@@ -1992,29 +2185,29 @@ def export_data_enhanced():
         include_classification = request.args.get('include_classification', 'true').lower() == 'true'
         format_type = request.args.get('format', 'csv')
         
-        query = "SELECT * FROM dbo.ProcessedData WHERE 1=1"
-        params = []
-        
+        query = "SELECT * FROM dbo.ProcessedData WHERE org_id = ?"
+        params = [g.current_user_org_id]
+
         if catchment_id:
             query += " AND catchment_id = ?"
             params.append(catchment_id)
-        
+
         if parameter_type:
             query += " AND LOWER(parameter_type) = ?"
             params.append(parameter_type.lower())
-        
+
         query += " ORDER BY measurement_date DESC"
-        
-        results = db.execute_query(query, params if params else None)
-        
+
+        results = _exec(query, params)
+
         if not results:
             return jsonify({'error': 'No data to export'}), 404
-        
+
         # Create DataFrame
         columns = ['processed_id', 'raw_id', 'source_id', 'catchment_id', 'measurement_date',
                   'parameter_type', 'original_value', 'mean_value', 'std_deviation',
                   'standardized_value', 'parameter_deviation', 'drought_index', 'classification',
-                  'is_failure', 'severity_level', 'created_at']
+                  'is_failure', 'severity_level', 'created_at', 'org_id']
         
         df = pd.DataFrame([tuple(row) for row in results], columns=columns)
         
@@ -2049,6 +2242,7 @@ def export_data_enhanced():
         )), 500
 
 @app.route('/debug/baseflow-check', methods=['GET'])
+@require_auth(roles=['admin'])
 def debug_baseflow_check():
     """Debug endpoint to verify baseflow data"""
     try:

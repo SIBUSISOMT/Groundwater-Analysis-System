@@ -1,8 +1,15 @@
 import os
 import sys
 import logging
+
+# Force UTF-8 output on Windows so unicode characters don't crash the terminal
+if sys.stdout.encoding and sys.stdout.encoding.lower() != 'utf-8':
+    sys.stdout.reconfigure(encoding='utf-8', errors='replace')
+if sys.stderr.encoding and sys.stderr.encoding.lower() != 'utf-8':
+    sys.stderr.reconfigure(encoding='utf-8', errors='replace')
+
 from app import app, db
-from config import Config 
+from config import Config
 
 def setup_logging():
     """Setup application logging"""

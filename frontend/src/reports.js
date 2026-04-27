@@ -1,6 +1,7 @@
 class AdvancedGroundwaterReports {
             constructor() {
-                this.apiBase = 'http://localhost:5000/api';
+                const _backend = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
+                this.apiBase = `${_backend}/api`;
                 this.allData = [];
                 this.filteredData = [];
                 this.currentPage = 1;

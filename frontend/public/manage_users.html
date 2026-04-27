@@ -1,0 +1,929 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HydroCore — Manage Users</title>
+    <!-- Auth guard -->
+    <style>body { display: none; }</style>
+    <script src="/frontend/src/auth.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        .enhanced-sidebar {
+            background: linear-gradient(180deg, #0f172a 0%, #1e293b 100%);
+            box-shadow: 4px 0 24px rgba(0,0,0,0.12);
+        }
+        .sidebar-header {
+            background: linear-gradient(135deg, #3b82f6 0%, #2563eb 100%);
+            position: relative; overflow: hidden;
+        }
+        .sidebar-header::before {
+            content: ''; position: absolute; top: -50%; right: -50%;
+            width: 200%; height: 200%;
+            background: radial-gradient(circle, rgba(255,255,255,0.1) 0%, transparent 70%);
+            animation: sidebarRotate 20s linear infinite;
+        }
+        @keyframes sidebarRotate { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        .logo-container { position: relative; z-index: 1; }
+        .logo-icon {
+            background: rgba(255,255,255,0.2); backdrop-filter: blur(10px);
+            box-shadow: 0 8px 32px rgba(0,0,0,0.1); transition: all 0.3s ease;
+        }
+        .nav-item {
+            position: relative; transition: all 0.3s cubic-bezier(0.4,0,0.2,1); overflow: hidden;
+        }
+        .nav-item::before {
+            content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 4px;
+            background: linear-gradient(180deg,#3b82f6,#8b5cf6);
+            transform: scaleY(0); transition: transform 0.3s ease;
+        }
+        .nav-item:hover::before, .nav-item.active::before { transform: scaleY(1); }
+        .nav-item.active {
+            background: linear-gradient(90deg,rgba(59,130,246,0.15) 0%,rgba(59,130,246,0.05) 100%);
+        }
+        .nav-item:hover { background: rgba(59,130,246,0.08); transform: translateX(4px); }
+        .nav-icon { transition: all 0.3s ease; filter: drop-shadow(0 0 8px rgba(59,130,246,0)); }
+        .nav-item:hover .nav-icon, .nav-item.active .nav-icon {
+            filter: drop-shadow(0 0 8px rgba(59,130,246,0.6)); transform: scale(1.1);
+        }
+        .nav-divider {
+            height: 1px;
+            background: linear-gradient(90deg,transparent 0%,rgba(255,255,255,0.1) 50%,transparent 100%);
+            margin: 16px 0;
+        }
+        .enhanced-header {
+            background: linear-gradient(135deg,#ffffff 0%,#f8fafc 100%);
+            backdrop-filter: blur(10px);
+            box-shadow: 0 4px 24px rgba(0,0,0,0.06);
+        }
+        .modal-overlay {
+            background: rgba(0,0,0,0.5);
+            backdrop-filter: blur(4px);
+        }
+        .badge-role-admin   { background:#fef3c7; color:#92400e; }
+        .badge-role-analyst { background:#dbeafe; color:#1e40af; }
+        .badge-role-viewer  { background:#f3f4f6; color:#374151; }
+        .badge-plan-pro     { background:#d1fae5; color:#065f46; }
+        .badge-plan-basic   { background:#e0e7ff; color:#3730a3; }
+        .badge-active       { background:#d1fae5; color:#065f46; }
+        .badge-inactive     { background:#fee2e2; color:#991b1b; }
+        .action-btn { transition: all 0.15s; }
+        .action-btn:hover { transform: scale(1.1); }
+    </style>
+</head>
+<body class="bg-gray-50 font-sans">
+
+    <!-- SIDEBAR -->
+    <div class="enhanced-sidebar fixed left-0 top-0 h-full w-64 z-30 flex flex-col">
+        <div class="sidebar-header flex items-center px-6 py-5 border-b border-white border-opacity-10">
+            <div class="logo-container flex items-center">
+                <div class="flex-shrink-0 mr-3" style="width:44px;height:44px;background:white;border-radius:10px;padding:4px;overflow:hidden;">
+                    <img src="/images/ChatGPT%20Image%20Apr%2023,%202026,%2010_17_41%20AM.png" alt="HydroCore" style="width:100%;height:100%;object-fit:contain;border-radius:6px;">
+                </div>
+                <div>
+                    <h1 class="text-base font-bold text-white leading-tight">HydroCore</h1>
+                </div>
+            </div>
+        </div>
+
+        <nav class="mt-6 overflow-y-auto flex-1 pb-4 px-3">
+            <div class="space-y-1">
+                <a href="/frontend/public/index.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-th-large mr-3 w-5 text-center"></i>
+                    <span>Dashboard</span>
+                </a>
+                <a href="/frontend/public/Reports.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-file-alt mr-3 w-5 text-center"></i>
+                    <span>Reports</span>
+                </a>
+                <a href="/frontend/public/analysis_page.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-chart-line mr-3 w-5 text-center"></i>
+                    <span>Failure Analysis</span>
+                </a>
+                <a href="/frontend/public/upload.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-cloud-upload-alt mr-3 w-5 text-center"></i>
+                    <span>Data Source Upload</span>
+                </a>
+                <a href="#"
+                   class="nav-item active flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-white">
+                    <i class="nav-icon fas fa-users-cog mr-3 w-5 text-center"></i>
+                    <span>Manage Users</span>
+                </a>
+            </div>
+
+            <div class="nav-divider"></div>
+
+        </nav>
+        <div class="px-3 py-3 border-t border-white border-opacity-10 flex-shrink-0">
+            <button onclick="confirmLogout()"
+                    class="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs
+                           text-gray-400 hover:text-red-300 rounded-lg transition-all duration-200
+                           border border-white border-opacity-10 hover:border-red-500 hover:border-opacity-40
+                           hover:bg-red-900 hover:bg-opacity-30 group">
+                <i class="fas fa-sign-out-alt group-hover:text-red-400 transition-colors"></i>
+                <span>Sign Out</span>
+            </button>
+        </div>
+    </div>
+
+    <!-- MAIN CONTENT -->
+    <div class="ml-64 min-h-screen flex flex-col">
+
+        <!-- Header -->
+        <header class="enhanced-header sticky top-0 z-20">
+            <div class="px-6 py-4 flex items-center justify-between">
+                <div>
+                    <h2 class="text-lg font-bold text-gray-800">User Management</h2>
+                    <p class="text-sm text-gray-500">Manage accounts, roles and plans</p>
+                </div>
+                <div class="flex items-center gap-3">
+                    <button id="createUserBtn"
+                            class="flex items-center gap-2 px-4 py-2 bg-blue-600 text-white text-sm font-medium
+                                   rounded-xl hover:bg-blue-700 transition-all shadow-sm hover:shadow-md">
+                        <i class="fas fa-user-plus"></i>
+                        <span>Create User</span>
+                    </button>
+                    <button onclick="loadUsers()"
+                            class="p-2.5 text-gray-600 hover:text-blue-600 rounded-xl hover:bg-blue-50 transition-all"
+                            title="Refresh">
+                        <i class="fas fa-sync-alt"></i>
+                    </button>
+                    <div class="flex items-center gap-2.5 pl-1 pr-3 py-1.5 bg-white border border-gray-200 rounded-xl shadow-sm cursor-default">
+                        <div id="headerUserAvatar"
+                             class="w-8 h-8 rounded-lg bg-gradient-to-br from-blue-500 to-purple-600
+                                    flex items-center justify-center text-white text-xs font-bold flex-shrink-0">U</div>
+                        <div class="text-left min-w-0">
+                            <div id="headerUsername" class="text-sm font-semibold text-gray-800 leading-tight truncate" style="max-width:130px;">Loading…</div>
+                            <div id="headerRole" class="text-xs text-blue-600 leading-tight capitalize">—</div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </header>
+
+        <!-- Stats bar -->
+        <div class="px-6 pt-6 pb-0 grid grid-cols-2 md:grid-cols-4 gap-4" id="statsBar">
+            <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Total Users</p>
+                <p id="statTotal" class="text-2xl font-bold text-gray-800">—</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Active</p>
+                <p id="statActive" class="text-2xl font-bold text-green-600">—</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Pro Plan</p>
+                <p id="statPro" class="text-2xl font-bold text-blue-600">—</p>
+            </div>
+            <div class="bg-white rounded-xl p-4 border border-gray-100 shadow-sm">
+                <p class="text-xs text-gray-500 uppercase tracking-wider mb-1">Admins</p>
+                <p id="statAdmins" class="text-2xl font-bold text-purple-600">—</p>
+            </div>
+        </div>
+
+        <!-- Table -->
+        <div class="px-6 py-6 flex-1">
+            <div class="bg-white rounded-2xl border border-gray-100 shadow-sm overflow-hidden">
+                <!-- Search & filter bar -->
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center gap-3 flex-wrap">
+                    <div class="relative flex-1 min-w-48">
+                        <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+                        <input id="searchInput" type="text" placeholder="Search by name or email…"
+                               class="w-full pl-9 pr-4 py-2 border border-gray-200 rounded-lg text-sm
+                                      focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                    </div>
+                    <select id="roleFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400">
+                        <option value="">All Roles</option>
+                        <option value="admin">Admin</option>
+                        <option value="analyst">Analyst</option>
+                        <option value="viewer">Viewer</option>
+                    </select>
+                    <select id="planFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400">
+                        <option value="">All Plans</option>
+                        <option value="pro">Pro</option>
+                        <option value="basic">Basic</option>
+                    </select>
+                </div>
+
+                <!-- Table -->
+                <div class="overflow-x-auto">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 border-b border-gray-100">
+                            <tr>
+                                <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">User</th>
+                                <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Role</th>
+                                <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Plan</th>
+                                <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Status</th>
+                                <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Last Login</th>
+                                <th class="text-left text-xs font-semibold text-gray-500 uppercase tracking-wider px-4 py-3">Created</th>
+                                <th class="text-right text-xs font-semibold text-gray-500 uppercase tracking-wider px-5 py-3">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="usersTableBody" class="divide-y divide-gray-50">
+                            <tr>
+                                <td colspan="7" class="text-center py-12 text-gray-400">
+                                    <i class="fas fa-spinner fa-spin text-2xl mb-3 block"></i>
+                                    Loading users…
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="tableFooter" class="px-5 py-3 border-t border-gray-100 flex items-center justify-between text-xs text-gray-400">
+                    <span id="tableCount">—</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- Footer -->
+        <footer class="border-t border-gray-200 bg-gradient-to-r from-gray-50 to-white mt-auto">
+            <div class="px-8 py-5">
+                <div class="flex flex-col lg:flex-row items-center justify-between gap-5">
+                    <div class="flex items-center gap-3">
+                        <div class="w-9 h-9 bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl flex items-center justify-center shadow-md">
+                            <i class="fas fa-tint text-white text-sm"></i>
+                        </div>
+                        <div>
+                            <p class="text-sm font-bold text-gray-800 leading-tight">HydroCore v2.0</p>
+                            <p class="text-xs text-gray-500">National Groundwater Analysis Platform</p>
+                        </div>
+                    </div>
+                    <div class="flex flex-col items-center gap-1.5 text-center">
+                        <div class="flex items-center gap-6">
+                            <div class="flex flex-col items-center">
+                                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Idea Owner</span>
+                                <span class="text-sm font-medium text-gray-700">Dr T. Shakhane</span>
+                            </div>
+                            <div class="h-8 w-px bg-gray-200"></div>
+                            <div class="flex flex-col items-center">
+                                <span class="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-0.5">Systems Engineer</span>
+                                <span class="text-sm font-medium text-gray-700">Sibusiso Mathonsi</span>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="text-center lg:text-right">
+                        <p class="text-sm font-medium text-gray-600">
+                            &copy; <span class="footer-year"></span> HydroCore. All rights reserved.
+                        </p>
+                        <p class="text-xs text-gray-400 mt-0.5">For research &amp; institutional use only.</p>
+                    </div>
+                </div>
+                <div class="mt-4 pt-3 border-t border-gray-100 text-center">
+                    <p class="text-xs text-gray-400">
+                        <i class="fas fa-shield-alt mr-1 text-blue-400"></i>
+                        Enterprise-grade security &middot; JWT-authenticated &middot; Data encrypted in transit
+                    </p>
+                </div>
+            </div>
+        </footer>
+    </div>
+
+    <!-- ═══════════════════ CREATE USER MODAL ═══════════════════ -->
+    <div id="createModal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div class="bg-gradient-to-r from-blue-600 to-blue-700 px-6 py-4 flex items-center justify-between">
+                <h3 class="text-white font-bold text-lg">Create New User</h3>
+                <button onclick="closeModal('createModal')" class="text-white text-opacity-80 hover:text-opacity-100">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <div id="createError" class="hidden p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"></div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Username</label>
+                    <input id="newUsername" type="text" placeholder="e.g. jsmith"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                </div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">Email</label>
+                    <input id="newEmail" type="email" placeholder="user@institution.gov.za"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-blue-400 focus:ring-2 focus:ring-blue-100">
+                </div>
+                <div class="p-3 bg-blue-50 rounded-lg border border-blue-100">
+                    <p class="text-xs text-blue-700">
+                        <i class="fas fa-info-circle mr-1"></i>
+                        A setup email with a secure link will be sent to the user. They will set their own password and configure 2FA during account activation.
+                    </p>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                        <select id="newRole" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-blue-400">
+                            <option value="viewer">Viewer</option>
+                            <option value="analyst">Analyst</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Plan</label>
+                        <select id="newPlan" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-blue-400">
+                            <option value="basic">Basic</option>
+                            <option value="pro">Pro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button onclick="closeModal('createModal')"
+                            class="flex-1 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-all">
+                        Cancel
+                    </button>
+                    <button onclick="submitCreateUser()"
+                            class="flex-1 py-2.5 bg-blue-600 text-white text-sm font-medium rounded-xl hover:bg-blue-700 transition-all flex items-center justify-center gap-2">
+                        <span id="createBtnText">Create User</span>
+                        <i id="createSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════ EDIT USER MODAL ═══════════════════ -->
+    <div id="editModal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div class="bg-gradient-to-r from-purple-600 to-purple-700 px-6 py-4 flex items-center justify-between">
+                <h3 class="text-white font-bold text-lg">Edit User — <span id="editModalName"></span></h3>
+                <button onclick="closeModal('editModal')" class="text-white text-opacity-80 hover:text-opacity-100">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="editUserId">
+                <div id="editError" class="hidden p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"></div>
+                <div id="editSuccess" class="hidden p-3 bg-green-50 border border-green-200 rounded-lg text-sm text-green-700"></div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+                        <select id="editRole" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-purple-400">
+                            <option value="viewer">Viewer</option>
+                            <option value="analyst">Analyst</option>
+                            <option value="admin">Admin</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-sm font-medium text-gray-700 mb-1">Plan</label>
+                        <select id="editPlan" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-purple-400">
+                            <option value="basic">Basic</option>
+                            <option value="pro">Pro</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" id="editActive" class="w-4 h-4 text-purple-600 rounded">
+                    <label for="editActive" class="text-sm font-medium text-gray-700">Account Active</label>
+                </div>
+                <div class="flex items-center gap-3">
+                    <input type="checkbox" id="editUnlock" class="w-4 h-4 text-purple-600 rounded">
+                    <label for="editUnlock" class="text-sm font-medium text-gray-700">Unlock account (clear failed attempts)</label>
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button onclick="closeModal('editModal')"
+                            class="flex-1 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-all">
+                        Cancel
+                    </button>
+                    <button onclick="submitEditUser()"
+                            class="flex-1 py-2.5 bg-purple-600 text-white text-sm font-medium rounded-xl hover:bg-purple-700 transition-all flex items-center justify-center gap-2">
+                        <span id="editBtnText">Save Changes</span>
+                        <i id="editSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════ RESET PASSWORD MODAL ═══════════════════ -->
+    <div id="resetModal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-md mx-4 overflow-hidden">
+            <div class="bg-gradient-to-r from-amber-500 to-orange-500 px-6 py-4 flex items-center justify-between">
+                <h3 class="text-white font-bold text-lg">Reset Password — <span id="resetModalName"></span></h3>
+                <button onclick="closeModal('resetModal')" class="text-white text-opacity-80 hover:text-opacity-100">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+            <div class="p-6 space-y-4">
+                <input type="hidden" id="resetUserId">
+                <p class="text-sm text-gray-600">
+                    The user will be required to change this password on their next login.
+                </p>
+                <div id="resetError" class="hidden p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700"></div>
+                <div>
+                    <label class="block text-sm font-medium text-gray-700 mb-1">New Password</label>
+                    <input id="resetPassword" type="password" placeholder="Minimum 8 characters with complexity"
+                           class="w-full px-4 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-amber-400 focus:ring-2 focus:ring-amber-100">
+                </div>
+                <div class="flex gap-3 pt-2">
+                    <button onclick="closeModal('resetModal')"
+                            class="flex-1 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-all">
+                        Cancel
+                    </button>
+                    <button onclick="submitResetPassword()"
+                            class="flex-1 py-2.5 bg-amber-500 text-white text-sm font-medium rounded-xl hover:bg-amber-600 transition-all flex items-center justify-center gap-2">
+                        <span id="resetBtnText">Reset Password</span>
+                        <i id="resetSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ═══════════════════ DELETE CONFIRM MODAL ═══════════════════ -->
+    <div id="deleteModal" class="modal-overlay fixed inset-0 z-50 flex items-center justify-center hidden">
+        <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+            <div class="p-6 text-center">
+                <div class="w-14 h-14 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+                    <i class="fas fa-trash-alt text-red-600 text-xl"></i>
+                </div>
+                <h3 class="text-lg font-bold text-gray-900 mb-2">Delete User?</h3>
+                <p class="text-sm text-gray-500 mb-2">
+                    You are about to permanently delete <span id="deleteModalName" class="font-semibold text-gray-700"></span>.
+                </p>
+                <p class="text-xs text-red-600 mb-6">This action cannot be undone.</p>
+                <input type="hidden" id="deleteUserId">
+                <div id="deleteError" class="hidden p-3 bg-red-50 border border-red-200 rounded-lg text-sm text-red-700 mb-4"></div>
+                <div class="flex gap-3">
+                    <button onclick="closeModal('deleteModal')"
+                            class="flex-1 py-2.5 border border-gray-300 text-gray-700 text-sm font-medium rounded-xl hover:bg-gray-50 transition-all">
+                        Cancel
+                    </button>
+                    <button onclick="submitDeleteUser()"
+                            class="flex-1 py-2.5 bg-red-600 text-white text-sm font-medium rounded-xl hover:bg-red-700 transition-all flex items-center justify-center gap-2">
+                        <span id="deleteBtnText">Delete</span>
+                        <i id="deleteSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <script>
+    const _BACKEND = (window.location.port === '5000' || window.location.port === '')
+        ? '' : 'http://localhost:5000';
+
+    document.querySelectorAll('.footer-year').forEach(el => el.textContent = new Date().getFullYear());
+
+    let _allUsers = [];
+
+    // ── Helpers ───────────────────────────────────────────────────────────────
+
+    function badge(text, cls) {
+        return `<span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${cls}">${text}</span>`;
+    }
+
+    function fmtDate(str) {
+        if (!str) return '<span class="text-gray-400">—</span>';
+        const d = new Date(str);
+        return isNaN(d) ? str : d.toLocaleDateString('en-ZA', { day:'2-digit', month:'short', year:'numeric' });
+    }
+
+    function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
+    function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+    function setBtnLoading(textId, spinnerId, loading) {
+        document.getElementById(textId).textContent = loading ? 'Saving…' : document.getElementById(textId).dataset.orig || 'Save';
+        document.getElementById(spinnerId).classList.toggle('hidden', !loading);
+    }
+
+    // ── Load users ────────────────────────────────────────────────────────────
+
+    async function loadUsers() {
+        document.getElementById('usersTableBody').innerHTML = `
+            <tr><td colspan="7" class="text-center py-12 text-gray-400">
+                <i class="fas fa-spinner fa-spin text-2xl mb-3 block"></i>Loading users…
+            </td></tr>`;
+
+        try {
+            const resp = await fetch(`${_BACKEND}/api/auth/users`, { credentials: 'include' });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to load users');
+            _allUsers = data.users;
+            renderUsers(_allUsers);
+            updateStats(_allUsers);
+        } catch (err) {
+            document.getElementById('usersTableBody').innerHTML = `
+                <tr><td colspan="7" class="text-center py-12 text-red-500">
+                    <i class="fas fa-exclamation-circle text-2xl mb-2 block"></i>${err.message}
+                </td></tr>`;
+        }
+    }
+
+    function updateStats(users) {
+        document.getElementById('statTotal').textContent  = users.length;
+        document.getElementById('statActive').textContent = users.filter(u => u.is_active).length;
+        document.getElementById('statPro').textContent    = users.filter(u => u.plan === 'pro').length;
+        document.getElementById('statAdmins').textContent = users.filter(u => u.role === 'admin').length;
+    }
+
+    function renderUsers(users) {
+        const tbody = document.getElementById('usersTableBody');
+        if (!users.length) {
+            tbody.innerHTML = `<tr><td colspan="7" class="text-center py-12 text-gray-400">No users found.</td></tr>`;
+            document.getElementById('tableCount').textContent = '0 users';
+            return;
+        }
+
+        const currentUserId = HydroAuth.getUser()?.user_id;
+
+        tbody.innerHTML = users.map(u => {
+            const roleBadge = badge(u.role,
+                u.role === 'admin' ? 'badge-role-admin' :
+                u.role === 'analyst' ? 'badge-role-analyst' : 'badge-role-viewer');
+            const planBadge = badge(u.plan === 'pro' ? 'Pro' : 'Basic',
+                u.plan === 'pro' ? 'badge-plan-pro' : 'badge-plan-basic');
+
+            // Status badge: show "Pending Setup" when setup not completed
+            let statusBadge;
+            if (!u.setup_completed) {
+                statusBadge = badge('Pending Setup', 'background:#fef3c7;color:#92400e;');
+            } else {
+                statusBadge = badge(u.is_active ? 'Active' : 'Inactive',
+                    u.is_active ? 'badge-active' : 'badge-inactive');
+            }
+
+            const isSelf = u.user_id === currentUserId;
+            const lockedIcon = u.locked_until
+                ? `<i class="fas fa-lock text-red-500 ml-1" title="Account locked"></i>` : '';
+            const totpIcon = u.totp_enabled
+                ? `<i class="fas fa-shield-alt text-green-500 ml-1" title="2FA Active"></i>` : '';
+
+            // Action buttons for setup/2FA management
+            const resendSetupBtn = !u.setup_completed ? `
+                <button onclick="submitResendSetup(${u.user_id})"
+                        class="action-btn w-8 h-8 flex items-center justify-center rounded-lg text-gray-500
+                               hover:text-amber-600 hover:bg-amber-50 transition-all"
+                        title="Resend setup email">
+                    <i class="fas fa-envelope text-xs"></i>
+                </button>` : '';
+
+            const reset2faBtn = u.totp_enabled ? `
+                <button onclick="submitResetTwoFA(${u.user_id})"
+                        class="action-btn w-8 h-8 flex items-center justify-center rounded-lg text-gray-500
+                               hover:text-purple-600 hover:bg-purple-50 transition-all"
+                        title="Reset 2FA">
+                    <i class="fas fa-shield-alt text-xs"></i>
+                </button>` : '';
+
+            return `
+            <tr class="hover:bg-gray-50 transition-colors">
+                <td class="px-5 py-4">
+                    <div class="flex items-center gap-3">
+                        <div class="w-8 h-8 rounded-full bg-gradient-to-br from-blue-400 to-purple-500
+                                    flex items-center justify-center text-white text-xs font-bold flex-shrink-0">
+                            ${(u.username || 'U').slice(0,2).toUpperCase()}
+                        </div>
+                        <div>
+                            <div class="font-medium text-gray-900 text-sm">${escHtml(u.username)}
+                                ${isSelf ? '<span class="text-xs text-blue-600 ml-1">(you)</span>' : ''}
+                                ${lockedIcon}${totpIcon}
+                            </div>
+                            <div class="text-xs text-gray-500">${escHtml(u.email)}</div>
+                        </div>
+                    </div>
+                </td>
+                <td class="px-4 py-4">${roleBadge}</td>
+                <td class="px-4 py-4">${planBadge}</td>
+                <td class="px-4 py-4">${statusBadge}</td>
+                <td class="px-4 py-4 text-xs text-gray-500">${fmtDate(u.last_login)}</td>
+                <td class="px-4 py-4 text-xs text-gray-500">${fmtDate(u.created_at)}</td>
+                <td class="px-5 py-4">
+                    <div class="flex items-center justify-end gap-1.5">
+                        <button onclick="openEditModal(${u.user_id})"
+                                class="action-btn w-8 h-8 flex items-center justify-center rounded-lg text-gray-500
+                                       hover:text-purple-600 hover:bg-purple-50 transition-all"
+                                title="Edit role/plan">
+                            <i class="fas fa-edit text-xs"></i>
+                        </button>
+                        <button onclick="openResetModal(${u.user_id}, '${escHtml(u.username)}')"
+                                class="action-btn w-8 h-8 flex items-center justify-center rounded-lg text-gray-500
+                                       hover:text-amber-600 hover:bg-amber-50 transition-all"
+                                title="Reset password">
+                            <i class="fas fa-key text-xs"></i>
+                        </button>
+                        ${resendSetupBtn}
+                        ${reset2faBtn}
+                        ${!isSelf ? `
+                        <button onclick="openDeleteModal(${u.user_id}, '${escHtml(u.username)}')"
+                                class="action-btn w-8 h-8 flex items-center justify-center rounded-lg text-gray-500
+                                       hover:text-red-600 hover:bg-red-50 transition-all"
+                                title="Delete user">
+                            <i class="fas fa-trash-alt text-xs"></i>
+                        </button>` : ''}
+                    </div>
+                </td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('tableCount').textContent = `${users.length} user${users.length !== 1 ? 's' : ''}`;
+    }
+
+    function escHtml(s) {
+        return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+    }
+
+    // ── Search / filter ───────────────────────────────────────────────────────
+
+    function applyFilters() {
+        const q    = document.getElementById('searchInput').value.toLowerCase();
+        const role = document.getElementById('roleFilter').value;
+        const plan = document.getElementById('planFilter').value;
+        const filtered = _allUsers.filter(u =>
+            (!q    || u.username.toLowerCase().includes(q) || u.email.toLowerCase().includes(q)) &&
+            (!role || u.role === role) &&
+            (!plan || u.plan === plan)
+        );
+        renderUsers(filtered);
+    }
+
+    document.getElementById('searchInput').addEventListener('input', applyFilters);
+    document.getElementById('roleFilter').addEventListener('change', applyFilters);
+    document.getElementById('planFilter').addEventListener('change', applyFilters);
+
+    // ── Create user ───────────────────────────────────────────────────────────
+
+    document.getElementById('createUserBtn').addEventListener('click', () => {
+        document.getElementById('newUsername').value = '';
+        document.getElementById('newEmail').value = '';
+        document.getElementById('newRole').value = 'viewer';
+        document.getElementById('newPlan').value = 'basic';
+        document.getElementById('createError').classList.add('hidden');
+        openModal('createModal');
+    });
+
+    async function submitCreateUser() {
+        const err = document.getElementById('createError');
+        err.classList.add('hidden');
+
+        const username = document.getElementById('newUsername').value.trim();
+        const email    = document.getElementById('newEmail').value.trim();
+        const role     = document.getElementById('newRole').value;
+        const plan     = document.getElementById('newPlan').value;
+
+        if (!username || !email) {
+            err.textContent = 'Username and email are required.';
+            err.classList.remove('hidden');
+            return;
+        }
+
+        document.getElementById('createBtnText').dataset.orig = 'Create User';
+        setBtnLoading('createBtnText', 'createSpinner', true);
+
+        try {
+            const resp = await fetch(`${_BACKEND}/api/auth/users`, {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ username, email, role, plan }),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to create user');
+            closeModal('createModal');
+            // Show info about setup email
+            const setupNote = data.setup_token
+                ? `User created. Setup token: ${data.setup_token} (SMTP not configured — share this link manually)`
+                : `User created. A setup email has been sent to ${email}.`;
+            alert(setupNote);
+            await loadUsers();
+        } catch (e) {
+            err.textContent = e.message;
+            err.classList.remove('hidden');
+        } finally {
+            document.getElementById('createBtnText').textContent = 'Create User';
+            document.getElementById('createSpinner').classList.add('hidden');
+        }
+    }
+
+    // ── Resend setup email ────────────────────────────────────────────────────
+
+    async function submitResendSetup(userId) {
+        if (!confirm('Resend setup email to this user?')) return;
+        try {
+            const resp = await fetch(`${_BACKEND}/api/auth/users/${userId}/resend-setup`, {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to resend setup email');
+            const msg = data.setup_token
+                ? `SMTP not configured. Setup token: ${data.setup_token}`
+                : data.message;
+            alert(msg);
+            await loadUsers();
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    }
+
+    // ── Reset 2FA ─────────────────────────────────────────────────────────────
+
+    async function submitResetTwoFA(userId) {
+        if (!confirm('Reset 2FA for this user? They will need to set up 2FA again via a new setup link.')) return;
+        try {
+            const resp = await fetch(`${_BACKEND}/api/auth/users/${userId}/reset-2fa`, {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to reset 2FA');
+            const msg = data.setup_token
+                ? `SMTP not configured. Setup token: ${data.setup_token}`
+                : data.message;
+            alert(msg);
+            await loadUsers();
+        } catch (e) {
+            alert('Error: ' + e.message);
+        }
+    }
+
+    // ── Edit user ─────────────────────────────────────────────────────────────
+
+    function openEditModal(userId) {
+        const u = _allUsers.find(x => x.user_id === userId);
+        if (!u) return;
+        document.getElementById('editUserId').value    = userId;
+        document.getElementById('editModalName').textContent = u.username;
+        document.getElementById('editRole').value      = u.role;
+        document.getElementById('editPlan').value      = u.plan || 'basic';
+        document.getElementById('editActive').checked  = u.is_active;
+        document.getElementById('editUnlock').checked  = false;
+        document.getElementById('editError').classList.add('hidden');
+        document.getElementById('editSuccess').classList.add('hidden');
+        openModal('editModal');
+    }
+
+    async function submitEditUser() {
+        const userId = parseInt(document.getElementById('editUserId').value);
+        const err    = document.getElementById('editError');
+        const suc    = document.getElementById('editSuccess');
+        err.classList.add('hidden');
+        suc.classList.add('hidden');
+
+        document.getElementById('editBtnText').dataset.orig = 'Save Changes';
+        setBtnLoading('editBtnText', 'editSpinner', true);
+
+        try {
+            const payload = {
+                role:      document.getElementById('editRole').value,
+                plan:      document.getElementById('editPlan').value,
+                is_active: document.getElementById('editActive').checked,
+            };
+            if (document.getElementById('editUnlock').checked) payload.unlock = true;
+
+            const resp = await fetch(`${_BACKEND}/api/auth/users/${userId}`, {
+                method: 'PUT', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to update user');
+            suc.textContent = 'User updated successfully.';
+            suc.classList.remove('hidden');
+            await loadUsers();
+            setTimeout(() => closeModal('editModal'), 800);
+        } catch (e) {
+            err.textContent = e.message;
+            err.classList.remove('hidden');
+        } finally {
+            document.getElementById('editBtnText').textContent = 'Save Changes';
+            document.getElementById('editSpinner').classList.add('hidden');
+        }
+    }
+
+    // ── Reset password ────────────────────────────────────────────────────────
+
+    function openResetModal(userId, username) {
+        document.getElementById('resetUserId').value = userId;
+        document.getElementById('resetModalName').textContent = username;
+        document.getElementById('resetPassword').value = '';
+        document.getElementById('resetError').classList.add('hidden');
+        openModal('resetModal');
+    }
+
+    async function submitResetPassword() {
+        const userId = parseInt(document.getElementById('resetUserId').value);
+        const pwd    = document.getElementById('resetPassword').value;
+        const err    = document.getElementById('resetError');
+        err.classList.add('hidden');
+
+        if (!pwd) {
+            err.textContent = 'Password is required.';
+            err.classList.remove('hidden');
+            return;
+        }
+
+        document.getElementById('resetBtnText').dataset.orig = 'Reset Password';
+        setBtnLoading('resetBtnText', 'resetSpinner', true);
+
+        try {
+            const resp = await fetch(`${_BACKEND}/api/auth/users/${userId}/reset-password`, {
+                method: 'POST', credentials: 'include',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ new_password: pwd }),
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to reset password');
+            closeModal('resetModal');
+        } catch (e) {
+            err.textContent = e.message;
+            err.classList.remove('hidden');
+        } finally {
+            document.getElementById('resetBtnText').textContent = 'Reset Password';
+            document.getElementById('resetSpinner').classList.add('hidden');
+        }
+    }
+
+    // ── Delete user ───────────────────────────────────────────────────────────
+
+    function openDeleteModal(userId, username) {
+        document.getElementById('deleteUserId').value = userId;
+        document.getElementById('deleteModalName').textContent = username;
+        document.getElementById('deleteError').classList.add('hidden');
+        openModal('deleteModal');
+    }
+
+    async function submitDeleteUser() {
+        const userId = parseInt(document.getElementById('deleteUserId').value);
+        const err    = document.getElementById('deleteError');
+        err.classList.add('hidden');
+
+        document.getElementById('deleteBtnText').dataset.orig = 'Delete';
+        setBtnLoading('deleteBtnText', 'deleteSpinner', true);
+
+        try {
+            const resp = await fetch(`${_BACKEND}/api/auth/users/${userId}`, {
+                method: 'DELETE', credentials: 'include',
+            });
+            const data = await resp.json();
+            if (!data.success) throw new Error(data.error || 'Failed to delete user');
+            closeModal('deleteModal');
+            await loadUsers();
+        } catch (e) {
+            err.textContent = e.message;
+            err.classList.remove('hidden');
+        } finally {
+            document.getElementById('deleteBtnText').textContent = 'Delete';
+            document.getElementById('deleteSpinner').classList.add('hidden');
+        }
+    }
+
+    // Close modals on backdrop click
+    document.querySelectorAll('.modal-overlay').forEach(overlay => {
+        overlay.addEventListener('click', (e) => {
+            if (e.target === overlay) overlay.classList.add('hidden');
+        });
+    });
+
+    // Load on auth ready
+    document.addEventListener('hydroAuthReady', () => {
+        if (!HydroAuth.isAdmin()) {
+            window.location.href = '/frontend/public/index.html';
+            return;
+        }
+        loadUsers();
+    });
+    </script>
+
+<!-- Logout Confirmation Modal -->
+<div id="logoutModal"
+     class="fixed inset-0 bg-black bg-opacity-60 z-[9999] hidden items-center justify-center"
+     onclick="if(event.target===this){this.classList.add('hidden');this.classList.remove('flex');}">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div class="bg-gradient-to-r from-red-500 to-rose-600 px-6 py-5">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 bg-white bg-opacity-20 rounded-xl flex items-center justify-center flex-shrink-0">
+                    <i class="fas fa-sign-out-alt text-white text-lg"></i>
+                </div>
+                <div>
+                    <h3 class="text-white font-bold text-lg">Sign Out</h3>
+                    <p class="text-red-100 text-xs mt-0.5">HydroCore — Active Session</p>
+                </div>
+            </div>
+        </div>
+        <div class="px-6 py-5">
+            <p class="text-gray-700 text-sm leading-relaxed">
+                Are you sure you want to sign out? Your current session will end and you will need to log in again to access HydroCore.
+            </p>
+        </div>
+        <div class="px-6 pb-5 flex gap-3">
+            <button onclick="document.getElementById('logoutModal').classList.add('hidden');document.getElementById('logoutModal').classList.remove('flex');"
+                    class="flex-1 px-4 py-2.5 border border-gray-300 text-gray-700 rounded-xl hover:bg-gray-50 transition-all font-medium text-sm">
+                Cancel
+            </button>
+            <button onclick="HydroAuth.logout()"
+                    class="flex-1 px-4 py-2.5 bg-red-600 text-white rounded-xl hover:bg-red-700 transition-all font-semibold text-sm flex items-center justify-center gap-2">
+                <i class="fas fa-sign-out-alt"></i> Yes, Sign Out
+            </button>
+        </div>
+    </div>
+</div>
+<script>
+function confirmLogout() {
+    const m = document.getElementById('logoutModal');
+    m.classList.remove('hidden');
+    m.classList.add('flex');
+}
+</script>
+</body>
+</html>

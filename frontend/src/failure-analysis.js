@@ -1,7 +1,8 @@
 // Failure Analysis Dashboard - failure-analysis.js
 class FailureAnalysisDashboard {
     constructor() {
-        this.apiBase = 'http://localhost:5000/api';
+        const _backend = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
+        this.apiBase = `${_backend}/api`;
         this.allData = [];
         this.filteredData = [];
         this.currentPage = 1;
@@ -18,7 +19,6 @@ class FailureAnalysisDashboard {
     async init() {
         this.setupEventListeners();
         await this.loadCatchments();
-        await this.loadDataSources();
         await this.loadAllFailures();
         this.showToast('Failure Analysis Dashboard ready', 'success');
     }

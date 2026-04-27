@@ -5,7 +5,27 @@
       "Bash(python3 -c ':*)",
       "Bash(python -c ':*)",
       "Bash(python convert_main_files.py)",
-      "WebSearch"
+      "WebSearch",
+      "Bash(python -c \"import ast, sys; ast.parse\\(open\\('auth.py'\\).read\\(\\)\\); print\\('auth.py OK'\\)\")",
+      "Bash(python *)",
+      "Bash(node --input-type=module)",
+      "Bash(grep -n \"</body>\\\\|</main>\\\\|</div>$\\\\|footer\" \"C:/Users/sbusi/OneDrive/Desktop/Groundwater-Analysis-System/frontend/public/index.html\")",
+      "Bash(grep -n \"</body>\\\\|</main>\\\\|</div>$\" \"C:/Users/sbusi/OneDrive/Desktop/Groundwater-Analysis-System/frontend/public/analysis_page.html\")",
+      "Bash(grep -n \"</body>\\\\|</main>\\\\|</div>$\" \"C:/Users/sbusi/OneDrive/Desktop/Groundwater-Analysis-System/frontend/public/Reports.html\")",
+      "Bash(curl -s http://localhost:5000/api/health)",
+      "Bash(/c/Users/sbusi/AppData/Local/Programs/Python/Python311/python.exe *)",
+      "Bash(/c/Users/sbusi/AppData/Local/Programs/Python/Python311/python.exe run_server.py)",
+      "Bash(echo \"PID: $!\")",
+      "Bash(curl -s -X POST http://localhost:5000/api/auth/login -H \"Content-Type: application/json\" -d '{\"username\":\"test\",\"password\":\"test\"}')",
+      "Bash(python3 -m json.tool)",
+      "Bash(curl -s http://localhost:5000/api/admin/stats -H \"Authorization: Bearer invalid\")",
+      "Bash(curl *)",
+      "Bash(python3 -c \"import sys,json; d=json.load\\(sys.stdin\\); print\\('success:', d.get\\('success'\\)\\); print\\('is_system_admin:', d.get\\('user',{}\\).get\\('is_system_admin'\\)\\)\")",
+      "Bash(git rm *)",
+      "Bash(sqlcmd *)",
+      "Bash(pkill -f \"python run_server.py\")",
+      "Bash(pkill -f \"python app.py\")",
+      "Bash(pkill -f \"run_server.py\")"
     ]
   }
 }

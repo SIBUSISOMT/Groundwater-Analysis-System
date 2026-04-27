@@ -2,6 +2,12 @@
 Flask>=2.3.3
 Flask-CORS>=4.0.0
 
+# Authentication & security
+flask-jwt-extended>=4.6.0
+bcrypt>=4.1.2
+flask-limiter>=3.5.0
+pyotp>=2.9.0
+
 # Database connectivity
 pyodbc>=4.0.39
 

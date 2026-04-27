@@ -1,0 +1,1472 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>HydroCore — System Administration</title>
+    <style>body { display: none; }</style>
+    <script src="/frontend/src/auth.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <style>
+        /* ── Sidebar ─────────────────────────────────────── */
+        .sa-sidebar {
+            background: #0a0f1e;
+            border-right: 1px solid rgba(251,191,36,0.12);
+        }
+        .sa-sidebar-header {
+            background: linear-gradient(135deg, #0f172a 0%, #1e1a2e 100%);
+            border-bottom: 1px solid rgba(251,191,36,0.2);
+        }
+        .sa-badge {
+            background: linear-gradient(90deg,#92400e,#b45309);
+            font-size:9px; letter-spacing:0.12em;
+        }
+
+        /* ── Nav items ───────────────────────────────────── */
+        .sa-nav-item {
+            position: relative; transition: all 0.25s; border-radius: 10px; overflow: hidden;
+        }
+        .sa-nav-item::before {
+            content: ''; position: absolute; left: 0; top: 0; height: 100%; width: 3px;
+            background: linear-gradient(180deg,#f59e0b,#d97706);
+            transform: scaleY(0); transition: transform 0.25s ease; border-radius:0 2px 2px 0;
+        }
+        .sa-nav-item:hover::before, .sa-nav-item.active::before { transform: scaleY(1); }
+        .sa-nav-item.active { background: rgba(245,158,11,0.1); }
+        .sa-nav-item:hover  { background: rgba(245,158,11,0.06); }
+        .sa-nav-item .sa-icon { transition: all 0.25s; }
+        .sa-nav-item:hover .sa-icon, .sa-nav-item.active .sa-icon {
+            color: #f59e0b !important; filter: drop-shadow(0 0 6px rgba(245,158,11,0.5));
+        }
+        .sa-divider {
+            height: 1px;
+            background: linear-gradient(90deg,transparent,rgba(251,191,36,0.15),transparent);
+            margin: 12px 0;
+        }
+
+        /* ── Header ──────────────────────────────────────── */
+        .sa-header {
+            background: #0f172a;
+            border-bottom: 1px solid rgba(251,191,36,0.15);
+        }
+        .sa-header-title { color: #f8fafc; }
+        .sa-header-sub   { color: #64748b; }
+
+        /* ── Profile pill ────────────────────────────────── */
+        .sa-profile-pill {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(251,191,36,0.2);
+            border-radius: 12px;
+        }
+        .sa-avatar {
+            background: linear-gradient(135deg,#92400e,#b45309);
+        }
+
+        /* ── Stat cards ──────────────────────────────────── */
+        .sa-stat {
+            background: #0f172a;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            transition: all 0.2s;
+        }
+        .sa-stat:hover {
+            border-color: rgba(245,158,11,0.3);
+            box-shadow: 0 0 0 1px rgba(245,158,11,0.1), 0 8px 24px rgba(0,0,0,0.4);
+            transform: translateY(-2px);
+        }
+
+        /* ── Table ───────────────────────────────────────── */
+        .sa-table-wrap {
+            background: #0f172a;
+            border: 1px solid rgba(255,255,255,0.06);
+            border-radius: 16px;
+            overflow: hidden;
+        }
+        .sa-th { color: #94a3b8; font-size: 11px; letter-spacing: 0.08em; }
+        .sa-tr { border-bottom: 1px solid rgba(255,255,255,0.04); transition: background 0.15s; }
+        .sa-tr:last-child { border-bottom: none; }
+        .sa-tr:hover { background: rgba(245,158,11,0.04); }
+        .sa-td { color: #e2e8f0; }
+        .sa-td-sub { color: #64748b; font-size: 12px; }
+
+        /* ── Badges ──────────────────────────────────────── */
+        .badge { display:inline-flex;align-items:center;padding:2px 10px;border-radius:9999px;font-size:11px;font-weight:500; }
+        .badge-pro     { background:rgba(16,185,129,0.15);color:#34d399;border:1px solid rgba(16,185,129,0.2); }
+        .badge-basic   { background:rgba(99,102,241,0.15);color:#a5b4fc;border:1px solid rgba(99,102,241,0.2); }
+        .badge-active  { background:rgba(34,197,94,0.12);color:#4ade80;border:1px solid rgba(34,197,94,0.2); }
+        .badge-susp    { background:rgba(239,68,68,0.12);color:#f87171;border:1px solid rgba(239,68,68,0.2); }
+
+        /* ── Action buttons ──────────────────────────────── */
+        .sa-action { transition: all 0.15s; border-radius: 8px; }
+        .sa-action:hover { transform: scale(1.1); }
+
+        /* ── Modals ──────────────────────────────────────── */
+        .sa-modal-bg  { background: rgba(0,0,0,0.7); backdrop-filter: blur(6px); }
+        .sa-modal-box { background: #0f172a; border: 1px solid rgba(255,255,255,0.1); border-radius: 20px; }
+        .sa-input {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #f1f5f9;
+            border-radius: 12px;
+            width: 100%; padding: 10px 16px; font-size: 14px; outline: none;
+            transition: border-color 0.2s, box-shadow 0.2s;
+        }
+        .sa-input:focus { border-color: #f59e0b; box-shadow: 0 0 0 3px rgba(245,158,11,0.12); }
+        .sa-input::placeholder { color: #4b5563; }
+        .sa-select {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.1);
+            color: #f1f5f9;
+            border-radius: 12px;
+            width: 100%; padding: 10px 16px; font-size: 14px; outline: none;
+        }
+        .sa-select option { background: #1e293b; color: #f1f5f9; }
+        .sa-label { display:block; font-size:13px; font-weight:500; color:#94a3b8; margin-bottom:6px; }
+
+        /* ── Buttons ─────────────────────────────────────── */
+        .btn-amber {
+            background: linear-gradient(135deg,#d97706,#b45309);
+            color: #fff; font-weight:600; border-radius:12px; padding:10px 20px; font-size:14px;
+            transition: all 0.2s; border: none; cursor: pointer;
+        }
+        .btn-amber:hover { box-shadow: 0 6px 20px rgba(217,119,6,0.4); transform: translateY(-1px); }
+        .btn-ghost {
+            background: rgba(255,255,255,0.05);
+            border: 1px solid rgba(255,255,255,0.12);
+            color: #94a3b8; font-weight:500; border-radius:12px; padding:10px 20px; font-size:14px;
+            transition: all 0.2s; cursor: pointer;
+        }
+        .btn-ghost:hover { background: rgba(255,255,255,0.08); color: #e2e8f0; }
+        .btn-danger {
+            background: linear-gradient(135deg,#dc2626,#b91c1c);
+            color:#fff; font-weight:600; border-radius:12px; padding:10px 20px; font-size:14px;
+            transition: all 0.2s; border: none; cursor: pointer;
+        }
+        .btn-danger:hover { box-shadow: 0 6px 20px rgba(220,38,38,0.4); }
+
+        /* ── Overview card ───────────────────────────────── */
+        .sa-overview {
+            background: linear-gradient(135deg,#0f172a,#1e1a2e);
+            border: 1px solid rgba(245,158,11,0.15);
+            border-radius:16px;
+        }
+
+        /* ── Scrollbar ───────────────────────────────────── */
+        ::-webkit-scrollbar { width:5px; }
+        ::-webkit-scrollbar-track { background: #0a0f1e; }
+        ::-webkit-scrollbar-thumb { background: rgba(245,158,11,0.25); border-radius:3px; }
+
+        .section-hidden { display: none !important; }
+
+        /* ── Search bar ──────────────────────────────────── */
+        .sa-search {
+            background: rgba(255,255,255,0.05); border:1px solid rgba(255,255,255,0.1);
+            color:#e2e8f0; border-radius:10px; padding:8px 12px 8px 36px;
+            font-size:14px; outline:none; transition:border-color 0.2s;
+        }
+        .sa-search:focus { border-color:#f59e0b; }
+        .sa-search::placeholder { color:#4b5563; }
+    </style>
+</head>
+<body class="font-sans" style="background:#060d1a;">
+
+<!-- ═══════════════════════════════════════════════════════════════ SIDEBAR -->
+<div class="sa-sidebar fixed left-0 top-0 h-full w-64 z-30 flex flex-col">
+
+    <!-- Header -->
+    <div class="sa-sidebar-header px-5 py-5 flex items-center gap-3">
+        <div style="width:42px;height:42px;background:rgba(245,158,11,0.15);border:1px solid rgba(245,158,11,0.3);border-radius:10px;padding:6px;flex-shrink:0;overflow:hidden;">
+            <img src="/images/ChatGPT%20Image%20Apr%2023,%202026,%2010_17_41%20AM.png"
+                 alt="HydroCore" style="width:100%;height:100%;object-fit:contain;border-radius:4px;filter:brightness(1.1);">
+        </div>
+        <div>
+            <p class="text-white font-bold text-sm leading-tight">HydroCore</p>
+            <span class="sa-badge text-white font-semibold px-2 py-0.5 rounded-full uppercase">
+                System Admin
+            </span>
+        </div>
+    </div>
+
+    <!-- Nav -->
+    <nav class="flex-1 overflow-y-auto px-3 py-4 space-y-1">
+        <p class="text-xs text-gray-600 uppercase tracking-wider px-3 mb-2 font-semibold">Platform</p>
+        <a href="#" onclick="return showSection('dashboard')"
+           id="navDashboard"
+           class="sa-nav-item active flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-300">
+            <i class="sa-icon fas fa-th-large w-4 text-amber-500 text-center"></i>
+            <span>Dashboard</span>
+        </a>
+        <a href="#" onclick="return showSection('tenants')"
+           id="navTenants"
+           class="sa-nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-300">
+            <i class="sa-icon fas fa-building w-4 text-center"></i>
+            <span>Manage Tenants</span>
+        </a>
+        <a href="#" onclick="return showSection('users')"
+           id="navUsers"
+           class="sa-nav-item flex items-center gap-3 px-4 py-3 text-sm font-medium text-gray-500 hover:text-gray-300">
+            <i class="sa-icon fas fa-users w-4 text-center"></i>
+            <span>Manage Users</span>
+        </a>
+
+        <div class="sa-divider"></div>
+
+        <p class="text-xs text-gray-600 uppercase tracking-wider px-3 mb-2 font-semibold">System</p>
+        <div class="px-4 py-3 rounded-xl" style="background:rgba(245,158,11,0.06);border:1px solid rgba(245,158,11,0.1);">
+            <div class="flex items-center gap-2 mb-1">
+                <i class="fas fa-shield-alt text-amber-500 text-xs"></i>
+                <span class="text-xs text-amber-500 font-semibold">Secure Session</span>
+            </div>
+            <p class="text-xs text-gray-600">JWT-authenticated · Audit-logged</p>
+        </div>
+    </nav>
+
+    <!-- Sign out -->
+    <div class="px-3 py-4" style="border-top:1px solid rgba(255,255,255,0.06);">
+        <button onclick="confirmLogout()"
+                class="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs
+                       text-gray-500 hover:text-red-400 rounded-xl transition-all
+                       border border-transparent hover:border-red-500 hover:border-opacity-30
+                       hover:bg-red-900 hover:bg-opacity-20 group">
+            <i class="fas fa-sign-out-alt group-hover:text-red-400 transition-colors"></i>
+            <span>Sign Out</span>
+        </button>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════ MAIN CONTENT -->
+<div class="ml-64 min-h-screen flex flex-col">
+
+    <!-- Header -->
+    <header class="sa-header sticky top-0 z-20">
+        <div class="px-6 py-4 flex items-center justify-between">
+            <div class="flex items-center gap-3">
+                <div class="flex items-center gap-2">
+                    <div class="w-1.5 h-6 rounded-full" style="background:linear-gradient(180deg,#f59e0b,#d97706);"></div>
+                    <div>
+                        <h2 id="pageTitle" class="sa-header-title text-base font-bold leading-tight">System Dashboard</h2>
+                        <p id="pageSubtitle" class="sa-header-sub text-xs">HydroCore platform overview</p>
+                    </div>
+                </div>
+            </div>
+
+            <div class="flex items-center gap-3">
+                <button id="createTenantBtn" onclick="openCreateTenantModal()"
+                        class="section-hidden btn-amber flex items-center gap-2 px-4 py-2 text-sm">
+                    <i class="fas fa-plus text-xs"></i> New Tenant
+                </button>
+
+                <!-- Profile pill -->
+                <div class="sa-profile-pill flex items-center gap-2.5 px-3 py-1.5 cursor-default">
+                    <div id="headerUserAvatar"
+                         class="sa-avatar w-8 h-8 rounded-lg flex items-center justify-center
+                                text-white text-xs font-bold flex-shrink-0">SA</div>
+                    <div class="text-left min-w-0">
+                        <div id="headerUsername" class="text-sm font-semibold text-gray-200 leading-tight truncate" style="max-width:120px;">Loading…</div>
+                        <div id="headerRole" class="text-xs text-amber-500 leading-tight font-medium">System Admin</div>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </header>
+
+    <!-- ════════════════════════ DASHBOARD SECTION ════════════════════════ -->
+    <div id="sectionDashboard" class="px-6 py-6 flex-1">
+
+        <!-- Stat cards -->
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6">
+
+            <div class="sa-stat p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <p class="sa-th uppercase tracking-wider text-xs">Total Tenants</p>
+                    <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                         style="background:rgba(245,158,11,0.12);border:1px solid rgba(245,158,11,0.2);">
+                        <i class="fas fa-building text-amber-400 text-sm"></i>
+                    </div>
+                </div>
+                <p id="statTenants" class="text-3xl font-bold text-amber-400">—</p>
+                <p class="text-xs text-gray-600 mt-1">Organisations</p>
+            </div>
+
+            <div class="sa-stat p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <p class="sa-th uppercase tracking-wider text-xs">Total Users</p>
+                    <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                         style="background:rgba(139,92,246,0.12);border:1px solid rgba(139,92,246,0.2);">
+                        <i class="fas fa-users text-purple-400 text-sm"></i>
+                    </div>
+                </div>
+                <p id="statUsers" class="text-3xl font-bold text-purple-400">—</p>
+                <p class="text-xs text-gray-600 mt-1">Across all tenants</p>
+            </div>
+
+            <div class="sa-stat p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <p class="sa-th uppercase tracking-wider text-xs">Active Tenants</p>
+                    <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                         style="background:rgba(34,197,94,0.12);border:1px solid rgba(34,197,94,0.2);">
+                        <i class="fas fa-check-circle text-green-400 text-sm"></i>
+                    </div>
+                </div>
+                <p id="statActive" class="text-3xl font-bold text-green-400">—</p>
+                <p class="text-xs text-gray-600 mt-1">Operational</p>
+            </div>
+
+            <div class="sa-stat p-5">
+                <div class="flex items-center justify-between mb-4">
+                    <p class="sa-th uppercase tracking-wider text-xs">Pending Setup</p>
+                    <div class="w-9 h-9 rounded-xl flex items-center justify-center"
+                         style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.2);">
+                        <i class="fas fa-clock text-red-400 text-sm"></i>
+                    </div>
+                </div>
+                <p id="statPending" class="text-3xl font-bold text-red-400">—</p>
+                <p class="text-xs text-gray-600 mt-1">Awaiting activation</p>
+            </div>
+        </div>
+
+        <!-- Overview panel -->
+        <div class="sa-overview p-6">
+            <div class="flex items-center justify-between mb-5">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center"
+                         style="background:rgba(245,158,11,0.15);">
+                        <i class="fas fa-layer-group text-amber-400 text-sm"></i>
+                    </div>
+                    <h3 class="text-base font-bold text-gray-200">Platform Overview</h3>
+                </div>
+                <button onclick="showSection('tenants')"
+                        class="text-sm text-amber-500 hover:text-amber-400 font-medium transition-colors flex items-center gap-1">
+                    Manage Tenants <i class="fas fa-arrow-right text-xs"></i>
+                </button>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <div class="p-4 rounded-xl" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+                    <i class="fas fa-shield-alt text-amber-500 text-xl mb-3 block"></i>
+                    <p class="text-sm font-semibold text-gray-300 mb-1">Multi-Tenant Security</p>
+                    <p class="text-xs text-gray-600">All tenant data is fully isolated by org_id. No cross-tenant data access is possible.</p>
+                </div>
+                <div class="p-4 rounded-xl" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+                    <i class="fas fa-fingerprint text-purple-400 text-xl mb-3 block"></i>
+                    <p class="text-sm font-semibold text-gray-300 mb-1">2FA Enforcement</p>
+                    <p class="text-xs text-gray-600">Every user activates TOTP two-factor authentication before accessing the platform.</p>
+                </div>
+                <div class="p-4 rounded-xl" style="background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.06);">
+                    <i class="fas fa-history text-green-400 text-xl mb-3 block"></i>
+                    <p class="text-sm font-semibold text-gray-300 mb-1">Full Audit Trail</p>
+                    <p class="text-xs text-gray-600">Every authentication event is recorded in the AuditLog table with IP and timestamp.</p>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════ TENANTS SECTION ══════════════════════════ -->
+    <div id="sectionTenants" class="px-6 py-6 flex-1 section-hidden">
+        <div class="sa-table-wrap">
+            <!-- Filter bar -->
+            <div class="px-5 py-4 flex items-center gap-3 flex-wrap"
+                 style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                <div class="relative flex-1 min-w-48">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-sm"></i>
+                    <input id="tenantSearch" type="text" placeholder="Search organisations…" class="sa-search w-full">
+                </div>
+                <button onclick="loadTenants()"
+                        class="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500
+                               hover:text-amber-400 transition-colors"
+                        style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);" title="Refresh">
+                    <i class="fas fa-sync-alt text-sm"></i>
+                </button>
+            </div>
+
+            <!-- Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                        <tr>
+                            <th class="sa-th text-left uppercase px-5 py-3">Organisation</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Plan</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Users</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Status</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Created</th>
+                            <th class="sa-th text-right uppercase px-5 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tenantsTableBody">
+                        <tr class="sa-tr"><td colspan="6" class="text-center py-12 text-gray-600">
+                            <i class="fas fa-spinner fa-spin text-2xl mb-3 block text-amber-600"></i>Loading…
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div id="tenantTableFooter" class="px-5 py-3 flex items-center justify-between"
+                 style="border-top:1px solid rgba(255,255,255,0.06);">
+                <span id="tenantCount" class="text-xs text-gray-600">—</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- ════════════════════════ USERS SECTION ═══════════════════════════════ -->
+    <div id="sectionUsers" class="px-6 py-6 flex-1 section-hidden">
+        <div class="sa-table-wrap">
+            <!-- Filter bar -->
+            <div class="px-5 py-4 flex items-center gap-3 flex-wrap"
+                 style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                <div class="relative flex-1 min-w-48">
+                    <i class="fas fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-600 text-sm"></i>
+                    <input id="userSearch" type="text" placeholder="Search users, emails, organisations…" class="sa-search w-full">
+                </div>
+                <select id="userOrgFilter" class="sa-select" style="width:auto;min-width:160px;padding:8px 12px;">
+                    <option value="">All Organisations</option>
+                </select>
+                <button onclick="loadUsers()"
+                        class="w-9 h-9 flex items-center justify-center rounded-xl text-gray-500
+                               hover:text-amber-400 transition-colors"
+                        style="background:rgba(255,255,255,0.04);border:1px solid rgba(255,255,255,0.08);" title="Refresh">
+                    <i class="fas fa-sync-alt text-sm"></i>
+                </button>
+            </div>
+            <!-- Table -->
+            <div class="overflow-x-auto">
+                <table class="w-full text-sm">
+                    <thead style="border-bottom:1px solid rgba(255,255,255,0.06);">
+                        <tr>
+                            <th class="sa-th text-left uppercase px-5 py-3">User</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Organisation</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Role</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Plan</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Status</th>
+                            <th class="sa-th text-left uppercase px-4 py-3">Last Login</th>
+                            <th class="sa-th text-right uppercase px-5 py-3">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr class="sa-tr"><td colspan="7" class="text-center py-12 text-gray-600">
+                            <i class="fas fa-spinner fa-spin text-2xl mb-3 block text-amber-600"></i>Loading…
+                        </td></tr>
+                    </tbody>
+                </table>
+            </div>
+            <div class="px-5 py-3" style="border-top:1px solid rgba(255,255,255,0.06);">
+                <span id="userCount" class="text-xs text-gray-600">—</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Footer -->
+    <footer class="mt-auto px-6 py-4" style="border-top:1px solid rgba(255,255,255,0.05);">
+        <p class="text-xs text-gray-700 text-center">
+            <i class="fas fa-lock mr-1 text-amber-700"></i>
+            HydroCore v2.0 &middot; System Administration Portal &middot; Restricted Access
+        </p>
+    </footer>
+</div>
+
+<!-- ═══════════════════════════════════════════ CREATE TENANT MODAL -->
+<div id="createTenantModal" class="sa-modal-bg fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="sa-modal-box w-full max-w-md mx-4 overflow-hidden">
+        <div class="px-6 py-5" style="background:linear-gradient(135deg,#1c1400,#2a1f00);border-bottom:1px solid rgba(245,158,11,0.2);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background:rgba(245,158,11,0.15);">
+                        <i class="fas fa-building text-amber-400 text-sm"></i>
+                    </div>
+                    <h3 class="text-white font-bold text-lg">Create New Tenant</h3>
+                </div>
+                <button onclick="closeModal('createTenantModal')" class="text-gray-500 hover:text-gray-300 transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+        </div>
+        <div class="p-6 space-y-4">
+            <div id="createTenantError" class="hidden p-3 rounded-xl text-sm text-red-400"
+                 style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);"></div>
+            <div>
+                <label class="sa-label">Organisation Name</label>
+                <input id="orgName" type="text" placeholder="e.g. Department of Water Affairs" class="sa-input">
+            </div>
+            <div>
+                <label class="sa-label">Plan</label>
+                <select id="orgPlan" class="sa-select">
+                    <option value="basic">Basic</option>
+                    <option value="pro">Pro</option>
+                </select>
+            </div>
+            <div style="border-top:1px solid rgba(255,255,255,0.06);padding-top:16px;">
+                <p class="text-xs text-amber-600 uppercase tracking-wider font-semibold mb-3">Tenant Administrator</p>
+                <div class="space-y-3">
+                    <div>
+                        <label class="sa-label">Username</label>
+                        <input id="adminUsername" type="text" placeholder="e.g. dwa_admin" class="sa-input">
+                    </div>
+                    <div>
+                        <label class="sa-label">Email</label>
+                        <input id="adminEmail" type="email" placeholder="admin@institution.gov.za" class="sa-input">
+                    </div>
+                </div>
+            </div>
+            <div class="p-3 rounded-xl text-xs text-amber-700"
+                 style="background:rgba(245,158,11,0.07);border:1px solid rgba(245,158,11,0.15);">
+                <i class="fas fa-info-circle mr-1"></i>
+                A setup email will be sent to the administrator to create their password and configure 2FA.
+            </div>
+            <div class="flex gap-3 pt-1">
+                <button onclick="closeModal('createTenantModal')" class="btn-ghost flex-1">Cancel</button>
+                <button onclick="submitCreateTenant()" class="btn-amber flex-1 flex items-center justify-center gap-2">
+                    <span id="createTenantBtnText">Create Tenant</span>
+                    <i id="createTenantSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ EDIT TENANT MODAL -->
+<div id="editTenantModal" class="sa-modal-bg fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="sa-modal-box w-full max-w-md mx-4 overflow-hidden">
+        <div class="px-6 py-5" style="background:linear-gradient(135deg,#0d1a2e,#0f2040);border-bottom:1px solid rgba(99,102,241,0.2);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background:rgba(99,102,241,0.15);">
+                        <i class="fas fa-edit text-indigo-400 text-sm"></i>
+                    </div>
+                    <h3 class="text-white font-bold text-lg">Edit — <span id="editTenantName" class="text-indigo-300"></span></h3>
+                </div>
+                <button onclick="closeModal('editTenantModal')" class="text-gray-500 hover:text-gray-300 transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+        </div>
+        <div class="p-6 space-y-4">
+            <input type="hidden" id="editTenantId">
+            <div id="editTenantError"   class="hidden p-3 rounded-xl text-sm text-red-400"   style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);"></div>
+            <div id="editTenantSuccess" class="hidden p-3 rounded-xl text-sm text-green-400" style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);"></div>
+            <div>
+                <label class="sa-label">Organisation Name</label>
+                <input id="editTenantNameInput" type="text" class="sa-input">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="sa-label">Plan</label>
+                    <select id="editTenantPlan" class="sa-select">
+                        <option value="basic">Basic</option>
+                        <option value="pro">Pro</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="sa-label">Status</label>
+                    <select id="editTenantActive" class="sa-select">
+                        <option value="1">Active</option>
+                        <option value="0">Suspended</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="sa-label">Contact Email</label>
+                <input id="editTenantEmail" type="email" class="sa-input">
+            </div>
+            <div class="flex gap-3 pt-1">
+                <button onclick="closeModal('editTenantModal')" class="btn-ghost flex-1">Cancel</button>
+                <button onclick="submitEditTenant()"
+                        class="flex-1 flex items-center justify-center gap-2 font-semibold text-sm py-2.5 rounded-xl text-white transition-all"
+                        style="background:linear-gradient(135deg,#4f46e5,#4338ca);">
+                    <span id="editTenantBtnText">Save Changes</span>
+                    <i id="editTenantSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ DELETE TENANT MODAL -->
+<div id="deleteTenantModal" class="sa-modal-bg fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="sa-modal-box w-full max-w-sm mx-4 overflow-hidden">
+        <div class="p-6 text-center">
+            <div class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+                 style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.25);">
+                <i class="fas fa-trash-alt text-red-500 text-xl"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-200 mb-2">Delete Tenant?</h3>
+            <p class="text-sm text-gray-500 mb-1">
+                Permanently delete <span id="deleteTenantNameSpan" class="font-semibold text-gray-300"></span>?
+            </p>
+            <p class="text-xs text-red-600 mb-5">This cannot be undone. Suspend it instead to retain data.</p>
+            <input type="hidden" id="deleteTenantId">
+            <div id="deleteTenantError" class="hidden p-3 rounded-xl text-sm text-red-400 mb-4"
+                 style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);"></div>
+            <div class="flex gap-3">
+                <button onclick="closeModal('deleteTenantModal')" class="btn-ghost flex-1">Cancel</button>
+                <button onclick="submitDeleteTenant()" class="btn-danger flex-1 flex items-center justify-center gap-2">
+                    <span id="deleteTenantBtnText">Delete</span>
+                    <i id="deleteTenantSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ EDIT USER MODAL -->
+<div id="editUserModal" class="sa-modal-bg fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="sa-modal-box w-full max-w-md mx-4 overflow-hidden">
+        <div class="px-6 py-5" style="background:linear-gradient(135deg,#0d1a2e,#0f2040);border-bottom:1px solid rgba(99,102,241,0.2);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background:rgba(99,102,241,0.15);">
+                        <i class="fas fa-user-edit text-indigo-400 text-sm"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-white font-bold text-base leading-tight">Edit User</h3>
+                        <p id="editUserSubtitle" class="text-indigo-300 text-xs mt-0.5"></p>
+                    </div>
+                </div>
+                <button onclick="closeModal('editUserModal')" class="text-gray-500 hover:text-gray-300 transition-colors">
+                    <i class="fas fa-times text-lg"></i>
+                </button>
+            </div>
+        </div>
+        <div class="p-6 space-y-4">
+            <input type="hidden" id="editUserId">
+            <div id="editUserError"   class="hidden p-3 rounded-xl text-sm text-red-400"   style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);"></div>
+            <div id="editUserSuccess" class="hidden p-3 rounded-xl text-sm text-green-400" style="background:rgba(34,197,94,0.1);border:1px solid rgba(34,197,94,0.2);"></div>
+            <div>
+                <label class="sa-label">Username</label>
+                <input id="editUserUsername" type="text" class="sa-input">
+            </div>
+            <div class="grid grid-cols-2 gap-3">
+                <div>
+                    <label class="sa-label">Role</label>
+                    <select id="editUserRole" class="sa-select">
+                        <option value="viewer">Viewer</option>
+                        <option value="analyst">Analyst</option>
+                        <option value="admin">Admin</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="sa-label">Plan</label>
+                    <select id="editUserPlan" class="sa-select">
+                        <option value="basic">Basic</option>
+                        <option value="pro">Pro</option>
+                    </select>
+                </div>
+            </div>
+            <div>
+                <label class="sa-label">Status</label>
+                <select id="editUserActive" class="sa-select">
+                    <option value="1">Active</option>
+                    <option value="0">Suspended</option>
+                </select>
+            </div>
+            <div class="flex gap-3 pt-1">
+                <button onclick="closeModal('editUserModal')" class="btn-ghost flex-1">Cancel</button>
+                <button onclick="submitEditUser()"
+                        class="flex-1 flex items-center justify-center gap-2 font-semibold text-sm py-2.5 rounded-xl text-white transition-all"
+                        style="background:linear-gradient(135deg,#4f46e5,#4338ca);">
+                    <span id="editUserBtnText">Save Changes</span>
+                    <i id="editUserSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ DELETE USER MODAL -->
+<div id="deleteUserModal" class="sa-modal-bg fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="sa-modal-box w-full max-w-sm mx-4 overflow-hidden">
+        <div class="p-6 text-center">
+            <div class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-4"
+                 style="background:rgba(239,68,68,0.12);border:1px solid rgba(239,68,68,0.25);">
+                <i class="fas fa-user-times text-red-500 text-xl"></i>
+            </div>
+            <h3 class="text-lg font-bold text-gray-200 mb-2">Delete User?</h3>
+            <p class="text-sm text-gray-500 mb-1">
+                Permanently delete <span id="deleteUserNameSpan" class="font-semibold text-gray-300"></span>?
+            </p>
+            <p class="text-xs text-red-600 mb-5">Their sessions will be revoked and account removed.</p>
+            <input type="hidden" id="deleteUserId">
+            <div id="deleteUserError" class="hidden p-3 rounded-xl text-sm text-red-400 mb-4"
+                 style="background:rgba(239,68,68,0.1);border:1px solid rgba(239,68,68,0.2);"></div>
+            <div class="flex gap-3">
+                <button onclick="closeModal('deleteUserModal')" class="btn-ghost flex-1">Cancel</button>
+                <button onclick="submitDeleteUser()" class="btn-danger flex-1 flex items-center justify-center gap-2">
+                    <span id="deleteUserBtnText">Delete</span>
+                    <i id="deleteUserSpinner" class="fas fa-spinner fa-spin hidden text-xs"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════ LOGOUT MODAL -->
+<div id="logoutModal" class="fixed inset-0 z-[9999] hidden items-center justify-center"
+     style="background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);"
+     onclick="if(event.target===this){this.classList.add('hidden');this.classList.remove('flex');}">
+    <div class="sa-modal-box w-full max-w-sm mx-4 overflow-hidden">
+        <div class="px-6 py-5" style="background:linear-gradient(135deg,#2d0a0a,#450f0f);border-bottom:1px solid rgba(239,68,68,0.2);">
+            <div class="flex items-center gap-3">
+                <div class="w-10 h-10 rounded-xl flex items-center justify-center" style="background:rgba(239,68,68,0.15);">
+                    <i class="fas fa-sign-out-alt text-red-400 text-lg"></i>
+                </div>
+                <div>
+                    <h3 class="text-white font-bold text-lg leading-tight">Sign Out</h3>
+                    <p class="text-red-400 text-xs mt-0.5">System Administration Portal</p>
+                </div>
+            </div>
+        </div>
+        <div class="px-6 py-5">
+            <p class="text-gray-400 text-sm leading-relaxed">
+                Are you sure you want to sign out? Your session will be invalidated.
+            </p>
+        </div>
+        <div class="px-6 pb-5 flex gap-3">
+            <button onclick="document.getElementById('logoutModal').classList.add('hidden');document.getElementById('logoutModal').classList.remove('flex');"
+                    class="btn-ghost flex-1">Cancel</button>
+            <button onclick="HydroAuth.logout()" class="btn-danger flex-1 flex items-center justify-center gap-2">
+                <i class="fas fa-sign-out-alt"></i> Sign Out
+            </button>
+        </div>
+    </div>
+</div>
+
+<script>
+const _BACKEND = (window.location.port === '5000' || window.location.port === '')
+    ? '' : 'http://localhost:5000';
+
+let _allTenants = [];
+
+// ── Navigation ────────────────────────────────────────────────────────────────
+
+function showSection(section) {
+    document.getElementById('sectionDashboard').classList.toggle('section-hidden', section !== 'dashboard');
+    document.getElementById('sectionTenants').classList.toggle('section-hidden', section !== 'tenants');
+    document.getElementById('sectionUsers').classList.toggle('section-hidden', section !== 'users');
+    document.getElementById('createTenantBtn').classList.toggle('section-hidden', section !== 'tenants');
+
+    ['navDashboard','navTenants','navUsers'].forEach(id => {
+        const el = document.getElementById(id);
+        el.classList.remove('active','text-gray-300');
+        el.classList.add('text-gray-500');
+    });
+
+    const navMap = { dashboard: 'navDashboard', tenants: 'navTenants', users: 'navUsers' };
+    const activeEl = document.getElementById(navMap[section]);
+    if (activeEl) { activeEl.classList.add('active','text-gray-300'); activeEl.classList.remove('text-gray-500'); }
+
+    const titles = {
+        dashboard: ['System Dashboard',  'HydroCore platform overview'],
+        tenants:   ['Manage Tenants',    'Organisations on the HydroCore platform'],
+        users:     ['Manage Users',      'All user accounts across every tenant'],
+    };
+    const [title, sub] = titles[section] || titles.dashboard;
+    document.getElementById('pageTitle').textContent    = title;
+    document.getElementById('pageSubtitle').textContent = sub;
+
+    if (section === 'dashboard') loadStats();
+    if (section === 'tenants')   loadTenants();
+    if (section === 'users')     loadUsers();
+    return false;
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────────
+
+function openModal(id)  { document.getElementById(id).classList.remove('hidden'); }
+function closeModal(id) { document.getElementById(id).classList.add('hidden'); }
+
+function fmtDate(str) {
+    if (!str) return '<span class="text-gray-600">—</span>';
+    const d = new Date(str);
+    return isNaN(d) ? str : d.toLocaleDateString('en-ZA', { day:'2-digit', month:'short', year:'numeric' });
+}
+
+function escHtml(s) {
+    return String(s || '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+function authHeader() {
+    const at = HydroAuth.getAccessToken();
+    return at ? { 'Authorization': `Bearer ${at}` } : {};
+}
+
+// ── Toast notifications ───────────────────────────────────────────────────────
+
+function showToast(message, type = 'success') {
+    const container = document.getElementById('saToastContainer');
+    if (!container) return;
+    const colours = {
+        success: 'bg-green-600',
+        error:   'bg-red-600',
+        warning: 'bg-amber-500',
+        info:    'bg-indigo-600',
+    };
+    const icons = {
+        success: 'fa-check-circle',
+        error:   'fa-exclamation-circle',
+        warning: 'fa-exclamation-triangle',
+        info:    'fa-info-circle',
+    };
+    const toast = document.createElement('div');
+    toast.className = `flex items-center gap-3 px-5 py-3.5 rounded-xl shadow-2xl text-white text-sm font-medium
+                       transition-all duration-300 ${colours[type] || colours.info}`;
+    toast.style.cssText = 'transform:translateX(120%);opacity:0;border:1px solid rgba(255,255,255,0.15);';
+    toast.innerHTML = `<i class="fas ${icons[type] || icons.info} text-base flex-shrink-0"></i><span>${escHtml(message)}</span>`;
+    container.appendChild(toast);
+    requestAnimationFrame(() => {
+        toast.style.transform = 'translateX(0)';
+        toast.style.opacity   = '1';
+    });
+    setTimeout(() => {
+        toast.style.transform = 'translateX(120%)';
+        toast.style.opacity   = '0';
+        setTimeout(() => toast.remove(), 300);
+    }, 3500);
+}
+
+// ── Stats ─────────────────────────────────────────────────────────────────────
+
+async function loadStats() {
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/stats`, {
+            credentials: 'include', headers: authHeader(),
+        });
+        const data = await resp.json();
+        if (data.success) {
+            document.getElementById('statTenants').textContent = data.stats.total_tenants;
+            document.getElementById('statUsers').textContent   = data.stats.total_users;
+            document.getElementById('statActive').textContent  = data.stats.active_tenants;
+            document.getElementById('statPending').textContent = data.stats.pending_setup;
+        }
+    } catch (e) { console.error('Stats load failed:', e); }
+}
+
+// ── Tenants ───────────────────────────────────────────────────────────────────
+
+async function loadTenants() {
+    document.getElementById('tenantsTableBody').innerHTML = `
+        <tr class="sa-tr"><td colspan="6" class="text-center py-12 text-gray-600">
+            <i class="fas fa-spinner fa-spin text-2xl mb-3 block text-amber-700"></i>Loading…
+        </td></tr>`;
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/tenants`, {
+            credentials: 'include', headers: authHeader(),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to load tenants');
+        _allTenants = data.tenants;
+        renderTenants(_allTenants);
+    } catch (e) {
+        document.getElementById('tenantsTableBody').innerHTML = `
+            <tr class="sa-tr"><td colspan="6" class="text-center py-12 text-red-600">
+                <i class="fas fa-exclamation-circle text-2xl mb-2 block"></i>${escHtml(e.message)}
+            </td></tr>`;
+    }
+}
+
+function renderTenants(tenants) {
+    const tbody = document.getElementById('tenantsTableBody');
+    if (!tenants.length) {
+        tbody.innerHTML = `<tr class="sa-tr"><td colspan="6" class="text-center py-12 text-gray-600">No tenants found.</td></tr>`;
+        document.getElementById('tenantCount').textContent = '0 organisations';
+        return;
+    }
+
+    tbody.innerHTML = tenants.map(t => {
+        const planBadge   = t.plan === 'pro'
+            ? `<span class="badge badge-pro">Pro</span>`
+            : `<span class="badge badge-basic">Basic</span>`;
+        const statusBadge = t.is_active
+            ? `<span class="badge badge-active">Active</span>`
+            : `<span class="badge badge-susp">Suspended</span>`;
+        const initials = (t.name || 'T').slice(0,2).toUpperCase();
+
+        return `
+        <tr class="sa-tr">
+            <td class="sa-td px-5 py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-9 h-9 rounded-xl flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                         style="background:linear-gradient(135deg,#92400e,#b45309);">${escHtml(initials)}</div>
+                    <div>
+                        <div class="font-medium text-sm">${escHtml(t.name)}</div>
+                        <div class="sa-td-sub">${escHtml(t.contact_email || '—')}</div>
+                    </div>
+                </div>
+            </td>
+            <td class="px-4 py-4">${planBadge}</td>
+            <td class="sa-td px-4 py-4 text-sm">${t.user_count || 0}</td>
+            <td class="px-4 py-4">${statusBadge}</td>
+            <td class="sa-td-sub px-4 py-4">${fmtDate(t.created_at)}</td>
+            <td class="px-5 py-4">
+                <div class="flex items-center justify-end gap-1.5">
+                    <button onclick="openEditTenantModal(${t.org_id})"
+                            class="sa-action w-8 h-8 flex items-center justify-center text-gray-600
+                                   hover:text-indigo-400 hover:bg-indigo-900 hover:bg-opacity-30" title="Edit">
+                        <i class="fas fa-edit text-xs"></i>
+                    </button>
+                    <button onclick="resendTenantSetup(${t.org_id}, '${escHtml(t.name)}')"
+                            class="sa-action w-8 h-8 flex items-center justify-center text-gray-600
+                                   hover:text-amber-400 hover:bg-amber-900 hover:bg-opacity-30" title="Resend setup email">
+                        <i class="fas fa-envelope text-xs"></i>
+                    </button>
+                    <button onclick="toggleTenantStatus(${t.org_id}, ${t.is_active})"
+                            class="sa-action w-8 h-8 flex items-center justify-center text-gray-600
+                                   hover:text-green-400 hover:bg-green-900 hover:bg-opacity-30"
+                            title="${t.is_active ? 'Suspend' : 'Activate'}">
+                        <i class="fas fa-${t.is_active ? 'pause-circle' : 'play-circle'} text-xs"></i>
+                    </button>
+                    <button onclick="openDeleteTenantModal(${t.org_id}, '${escHtml(t.name)}')"
+                            class="sa-action w-8 h-8 flex items-center justify-center text-gray-600
+                                   hover:text-red-400 hover:bg-red-900 hover:bg-opacity-30" title="Delete">
+                        <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>`;
+    }).join('');
+
+    document.getElementById('tenantCount').textContent =
+        `${tenants.length} organisation${tenants.length !== 1 ? 's' : ''}`;
+}
+
+document.getElementById('tenantSearch').addEventListener('input', function () {
+    const q = this.value.toLowerCase();
+    renderTenants(_allTenants.filter(t =>
+        t.name.toLowerCase().includes(q) || (t.contact_email || '').toLowerCase().includes(q)
+    ));
+});
+
+// ── Create Tenant ─────────────────────────────────────────────────────────────
+
+function openCreateTenantModal() {
+    ['orgName','adminUsername','adminEmail'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('orgPlan').value = 'basic';
+    document.getElementById('createTenantError').classList.add('hidden');
+    openModal('createTenantModal');
+}
+
+async function submitCreateTenant() {
+    const errEl          = document.getElementById('createTenantError');
+    errEl.classList.add('hidden');
+    const org_name       = document.getElementById('orgName').value.trim();
+    const plan           = document.getElementById('orgPlan').value;
+    const admin_username = document.getElementById('adminUsername').value.trim();
+    const admin_email    = document.getElementById('adminEmail').value.trim();
+
+    if (!org_name || !admin_username || !admin_email) {
+        errEl.textContent = 'All fields are required.';
+        errEl.classList.remove('hidden');
+        return;
+    }
+
+    document.getElementById('createTenantBtnText').textContent = 'Creating…';
+    document.getElementById('createTenantSpinner').classList.remove('hidden');
+
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/tenants`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...authHeader() },
+            body: JSON.stringify({ org_name, plan, admin_username, admin_email }),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to create tenant');
+
+        closeModal('createTenantModal');
+        if (data.setup_token) {
+            showSetupLinkModal(data.setup_token, org_name);
+        } else {
+            showToast(`Tenant "${org_name}" created — setup email sent`, 'success');
+        }
+        await loadTenants();
+        loadStats();
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+    } finally {
+        document.getElementById('createTenantBtnText').textContent = 'Create Tenant';
+        document.getElementById('createTenantSpinner').classList.add('hidden');
+    }
+}
+
+function showSetupLinkModal(token, orgName) {
+    const url = `${window.location.origin}/frontend/public/setup_account.html?token=${token}`;
+    const el = document.getElementById('setupLinkModal');
+    document.getElementById('setupLinkOrgName').textContent = orgName;
+    document.getElementById('setupLinkUrl').value = url;
+    openModal('setupLinkModal');
+}
+
+function copySetupLink() {
+    const inp = document.getElementById('setupLinkUrl');
+    inp.select();
+    document.execCommand('copy');
+    showToast('Setup link copied to clipboard', 'success');
+}
+
+// ── Edit Tenant ───────────────────────────────────────────────────────────────
+
+function openEditTenantModal(orgId) {
+    const t = _allTenants.find(x => x.org_id === orgId);
+    if (!t) return;
+    document.getElementById('editTenantId').value        = orgId;
+    document.getElementById('editTenantName').textContent = t.name;
+    document.getElementById('editTenantNameInput').value  = t.name;
+    document.getElementById('editTenantPlan').value       = t.plan || 'basic';
+    document.getElementById('editTenantActive').value     = t.is_active ? '1' : '0';
+    document.getElementById('editTenantEmail').value      = t.contact_email || '';
+    document.getElementById('editTenantError').classList.add('hidden');
+    document.getElementById('editTenantSuccess').classList.add('hidden');
+    openModal('editTenantModal');
+}
+
+async function submitEditTenant() {
+    const orgId  = parseInt(document.getElementById('editTenantId').value);
+    const errEl  = document.getElementById('editTenantError');
+    const sucEl  = document.getElementById('editTenantSuccess');
+    errEl.classList.add('hidden'); sucEl.classList.add('hidden');
+
+    const payload = {
+        name:          document.getElementById('editTenantNameInput').value.trim(),
+        plan:          document.getElementById('editTenantPlan').value,
+        is_active:     document.getElementById('editTenantActive').value === '1',
+        contact_email: document.getElementById('editTenantEmail').value.trim(),
+    };
+
+    // Optimistic update — apply immediately to local state and re-render
+    const idx = _allTenants.findIndex(t => t.org_id === orgId);
+    const prev = idx >= 0 ? { ..._allTenants[idx] } : null;
+    if (idx >= 0) {
+        Object.assign(_allTenants[idx], payload);
+        renderTenants(_allTenants);
+    }
+
+    document.getElementById('editTenantBtnText').textContent = 'Saving…';
+    document.getElementById('editTenantSpinner').classList.remove('hidden');
+
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/tenants/${orgId}`, {
+            method: 'PUT', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...authHeader() },
+            body: JSON.stringify(payload),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to update tenant');
+
+        closeModal('editTenantModal');
+        showToast(`"${payload.name}" updated successfully`, 'success');
+        loadStats();
+    } catch (e) {
+        // Revert optimistic update on failure
+        if (prev && idx >= 0) { _allTenants[idx] = prev; renderTenants(_allTenants); }
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+    } finally {
+        document.getElementById('editTenantBtnText').textContent = 'Save Changes';
+        document.getElementById('editTenantSpinner').classList.add('hidden');
+    }
+}
+
+// ── Toggle Status ─────────────────────────────────────────────────────────────
+
+async function toggleTenantStatus(orgId, currentActive) {
+    const newActive = !currentActive;
+    const label     = newActive ? 'activated' : 'suspended';
+
+    // Optimistic update
+    const idx = _allTenants.findIndex(t => t.org_id === orgId);
+    if (idx >= 0) {
+        _allTenants[idx].is_active = newActive;
+        renderTenants(_allTenants);
+    }
+
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/tenants/${orgId}`, {
+            method: 'PUT', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...authHeader() },
+            body: JSON.stringify({ is_active: newActive }),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error);
+        const name = idx >= 0 ? _allTenants[idx].name : `Tenant #${orgId}`;
+        showToast(`"${name}" ${label}`, newActive ? 'success' : 'warning');
+        loadStats();
+    } catch (e) {
+        // Revert
+        if (idx >= 0) { _allTenants[idx].is_active = currentActive; renderTenants(_allTenants); }
+        showToast('Error: ' + e.message, 'error');
+    }
+}
+
+// ── Resend Setup ──────────────────────────────────────────────────────────────
+
+async function resendTenantSetup(orgId, orgName) {
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/tenants/${orgId}/resend-setup`, {
+            method: 'POST', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...authHeader() },
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error);
+        if (data.setup_token) {
+            showSetupLinkModal(data.setup_token, orgName);
+        } else {
+            showToast(`Setup email resent to admin of "${orgName}"`, 'success');
+        }
+    } catch (e) { showToast('Error: ' + e.message, 'error'); }
+}
+
+// ── Delete Tenant ─────────────────────────────────────────────────────────────
+
+function openDeleteTenantModal(orgId, orgName) {
+    document.getElementById('deleteTenantId').value = orgId;
+    document.getElementById('deleteTenantNameSpan').textContent = orgName;
+    document.getElementById('deleteTenantError').classList.add('hidden');
+    openModal('deleteTenantModal');
+}
+
+async function submitDeleteTenant() {
+    const orgId = parseInt(document.getElementById('deleteTenantId').value);
+    const errEl = document.getElementById('deleteTenantError');
+    errEl.classList.add('hidden');
+    document.getElementById('deleteTenantBtnText').textContent = 'Deleting…';
+    document.getElementById('deleteTenantSpinner').classList.remove('hidden');
+
+    const orgName = document.getElementById('deleteTenantNameSpan').textContent;
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/tenants/${orgId}`, {
+            method: 'DELETE', credentials: 'include', headers: authHeader(),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to delete tenant');
+        closeModal('deleteTenantModal');
+        showToast(`"${orgName}" deleted`, 'success');
+        await loadTenants();
+        loadStats();
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+    } finally {
+        document.getElementById('deleteTenantBtnText').textContent = 'Delete';
+        document.getElementById('deleteTenantSpinner').classList.add('hidden');
+    }
+}
+
+// ── Users ─────────────────────────────────────────────────────────────────────
+
+let _allUsers = [];
+
+async function loadUsers() {
+    document.getElementById('usersTableBody').innerHTML = `
+        <tr class="sa-tr"><td colspan="7" class="text-center py-12 text-gray-600">
+            <i class="fas fa-spinner fa-spin text-2xl mb-3 block text-amber-700"></i>Loading…
+        </td></tr>`;
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/users`, { credentials: 'include', headers: authHeader() });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to load users');
+        _allUsers = data.users;
+
+        // Populate org filter
+        const orgs = [...new Map(_allUsers.map(u => [u.org_id, u.org_name])).entries()];
+        const sel  = document.getElementById('userOrgFilter');
+        const cur  = sel.value;
+        sel.innerHTML = '<option value="">All Organisations</option>' +
+            orgs.map(([id, name]) => `<option value="${id}">${escHtml(name)}</option>`).join('');
+        sel.value = cur;
+
+        applyUserFilters();
+    } catch (e) {
+        document.getElementById('usersTableBody').innerHTML = `
+            <tr class="sa-tr"><td colspan="7" class="text-center py-12 text-red-600">
+                <i class="fas fa-exclamation-circle text-2xl mb-2 block"></i>${escHtml(e.message)}
+            </td></tr>`;
+    }
+}
+
+function applyUserFilters() {
+    const q      = (document.getElementById('userSearch').value || '').toLowerCase();
+    const orgId  = document.getElementById('userOrgFilter').value;
+    const filtered = _allUsers.filter(u => {
+        const matchQ   = !q || u.username.toLowerCase().includes(q) ||
+                         u.email.toLowerCase().includes(q) ||
+                         u.org_name.toLowerCase().includes(q);
+        const matchOrg = !orgId || String(u.org_id) === orgId;
+        return matchQ && matchOrg;
+    });
+    renderUsers(filtered);
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+    document.getElementById('userSearch').addEventListener('input', applyUserFilters);
+    document.getElementById('userOrgFilter').addEventListener('change', applyUserFilters);
+});
+
+function renderUsers(users) {
+    const tbody = document.getElementById('usersTableBody');
+    document.getElementById('userCount').textContent =
+        `${users.length} user${users.length !== 1 ? 's' : ''}`;
+
+    if (!users.length) {
+        tbody.innerHTML = `<tr class="sa-tr"><td colspan="7" class="text-center py-12 text-gray-600">No users found.</td></tr>`;
+        return;
+    }
+
+    const roleBadge = r => ({
+        admin:   `<span class="badge" style="background:rgba(245,158,11,0.15);color:#fbbf24;border:1px solid rgba(245,158,11,0.25);">Admin</span>`,
+        analyst: `<span class="badge" style="background:rgba(139,92,246,0.15);color:#a78bfa;border:1px solid rgba(139,92,246,0.25);">Analyst</span>`,
+        viewer:  `<span class="badge" style="background:rgba(100,116,139,0.15);color:#94a3b8;border:1px solid rgba(100,116,139,0.25);">Viewer</span>`,
+    }[r] || `<span class="badge badge-basic">${escHtml(r)}</span>`);
+
+    tbody.innerHTML = users.map(u => `
+        <tr class="sa-tr">
+            <td class="sa-td px-5 py-4">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-lg flex items-center justify-center text-xs font-bold text-white flex-shrink-0"
+                         style="background:linear-gradient(135deg,#4f46e5,#6d28d9);">
+                        ${escHtml((u.username || '?').slice(0,2).toUpperCase())}
+                    </div>
+                    <div>
+                        <div class="font-medium text-sm">${escHtml(u.username)}</div>
+                        <div class="sa-td-sub">${escHtml(u.email)}</div>
+                    </div>
+                </div>
+            </td>
+            <td class="sa-td px-4 py-4 text-sm">${escHtml(u.org_name)}</td>
+            <td class="px-4 py-4">${roleBadge(u.role)}</td>
+            <td class="px-4 py-4">${u.plan === 'pro'
+                ? `<span class="badge badge-pro">Pro</span>`
+                : `<span class="badge badge-basic">Basic</span>`}</td>
+            <td class="px-4 py-4">${u.is_active
+                ? `<span class="badge badge-active">Active</span>`
+                : `<span class="badge badge-susp">Suspended</span>`}</td>
+            <td class="sa-td-sub px-4 py-4">${u.last_login ? fmtDate(u.last_login) : '<span class="text-gray-700">Never</span>'}</td>
+            <td class="px-5 py-4">
+                <div class="flex items-center justify-end gap-1.5">
+                    <button onclick="openEditUserModal(${u.user_id})"
+                            class="sa-action w-8 h-8 flex items-center justify-center text-gray-600
+                                   hover:text-indigo-400 hover:bg-indigo-900 hover:bg-opacity-30" title="Edit user">
+                        <i class="fas fa-edit text-xs"></i>
+                    </button>
+                    <button onclick="openDeleteUserModal(${u.user_id}, '${escHtml(u.username)}')"
+                            class="sa-action w-8 h-8 flex items-center justify-center text-gray-600
+                                   hover:text-red-400 hover:bg-red-900 hover:bg-opacity-30" title="Delete user">
+                        <i class="fas fa-trash-alt text-xs"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>`).join('');
+}
+
+function openEditUserModal(userId) {
+    const u = _allUsers.find(x => x.user_id === userId);
+    if (!u) return;
+    document.getElementById('editUserId').value      = userId;
+    document.getElementById('editUserSubtitle').textContent = `${u.email} · ${u.org_name}`;
+    document.getElementById('editUserUsername').value = u.username;
+    document.getElementById('editUserRole').value    = u.role;
+    document.getElementById('editUserPlan').value    = u.plan || 'basic';
+    document.getElementById('editUserActive').value  = u.is_active ? '1' : '0';
+    document.getElementById('editUserError').classList.add('hidden');
+    document.getElementById('editUserSuccess').classList.add('hidden');
+    openModal('editUserModal');
+}
+
+async function submitEditUser() {
+    const userId = parseInt(document.getElementById('editUserId').value);
+    const errEl  = document.getElementById('editUserError');
+    const sucEl  = document.getElementById('editUserSuccess');
+    errEl.classList.add('hidden'); sucEl.classList.add('hidden');
+    document.getElementById('editUserBtnText').textContent = 'Saving…';
+    document.getElementById('editUserSpinner').classList.remove('hidden');
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/users/${userId}`, {
+            method: 'PUT', credentials: 'include',
+            headers: { 'Content-Type': 'application/json', ...authHeader() },
+            body: JSON.stringify({
+                username:  document.getElementById('editUserUsername').value.trim(),
+                role:      document.getElementById('editUserRole').value,
+                plan:      document.getElementById('editUserPlan').value,
+                is_active: document.getElementById('editUserActive').value === '1',
+            }),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to update user');
+        closeModal('editUserModal');
+        showToast('User updated successfully', 'success');
+        await loadUsers();
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+    } finally {
+        document.getElementById('editUserBtnText').textContent = 'Save Changes';
+        document.getElementById('editUserSpinner').classList.add('hidden');
+    }
+}
+
+function openDeleteUserModal(userId, username) {
+    document.getElementById('deleteUserId').value = userId;
+    document.getElementById('deleteUserNameSpan').textContent = username;
+    document.getElementById('deleteUserError').classList.add('hidden');
+    openModal('deleteUserModal');
+}
+
+async function submitDeleteUser() {
+    const userId = parseInt(document.getElementById('deleteUserId').value);
+    const errEl  = document.getElementById('deleteUserError');
+    errEl.classList.add('hidden');
+    document.getElementById('deleteUserBtnText').textContent = 'Deleting…';
+    document.getElementById('deleteUserSpinner').classList.remove('hidden');
+    try {
+        const resp = await fetch(`${_BACKEND}/api/admin/users/${userId}`, {
+            method: 'DELETE', credentials: 'include', headers: authHeader(),
+        });
+        const data = await resp.json();
+        if (!data.success) throw new Error(data.error || 'Failed to delete user');
+        closeModal('deleteUserModal');
+        showToast('User deleted', 'success');
+        await loadUsers();
+        loadStats();
+    } catch (e) {
+        errEl.textContent = e.message;
+        errEl.classList.remove('hidden');
+    } finally {
+        document.getElementById('deleteUserBtnText').textContent = 'Delete';
+        document.getElementById('deleteUserSpinner').classList.add('hidden');
+    }
+}
+
+// ── Logout ────────────────────────────────────────────────────────────────────
+
+function confirmLogout() {
+    const m = document.getElementById('logoutModal');
+    m.classList.remove('hidden');
+    m.classList.add('flex');
+}
+
+document.querySelectorAll('.sa-modal-bg').forEach(o => {
+    o.addEventListener('click', e => { if (e.target === o) o.classList.add('hidden'); });
+});
+
+// ── Init ──────────────────────────────────────────────────────────────────────
+
+document.addEventListener('hydroAuthReady', () => {
+    if (!HydroAuth.isSystemAdmin()) {
+        window.location.href = '/frontend/public/index.html';
+        return;
+    }
+    loadStats();
+    startInactivityTimer();
+});
+
+// ── Inactivity timeout (15 min idle → 2 min warning → auto-logout) ───────────
+
+const IDLE_MS    = 13 * 60 * 1000;   // 13 min before warning
+const WARNING_MS =  2 * 60 * 1000;   // 2 min to respond before logout
+
+let _idleTimer, _warningTimer, _countdownInterval;
+
+function startInactivityTimer() {
+    const events = ['mousemove','mousedown','keydown','scroll','touchstart','click'];
+    events.forEach(e => document.addEventListener(e, resetIdleTimer, { passive: true }));
+    resetIdleTimer();
+}
+
+function resetIdleTimer() {
+    clearTimeout(_idleTimer);
+    clearTimeout(_warningTimer);
+    clearInterval(_countdownInterval);
+    const modal = document.getElementById('idleWarningModal');
+    if (modal) modal.classList.add('hidden');
+    _idleTimer = setTimeout(showIdleWarning, IDLE_MS);
+}
+
+function showIdleWarning() {
+    const modal = document.getElementById('idleWarningModal');
+    if (!modal) return;
+    let secs = WARNING_MS / 1000;
+    document.getElementById('idleCountdown').textContent = secs;
+    modal.classList.remove('hidden');
+
+    _countdownInterval = setInterval(() => {
+        secs--;
+        const el = document.getElementById('idleCountdown');
+        if (el) el.textContent = secs;
+        if (secs <= 0) { clearInterval(_countdownInterval); HydroAuth.logout(); }
+    }, 1000);
+
+    _warningTimer = setTimeout(() => HydroAuth.logout(), WARNING_MS);
+}
+
+function stayLoggedIn() {
+    resetIdleTimer();
+}
+</script>
+
+<!-- ── Toast container ───────────────────────────────────────────────────── -->
+<div id="saToastContainer"
+     class="fixed bottom-5 right-5 z-[99998] flex flex-col gap-2 items-end pointer-events-none"
+     style="min-width:260px;max-width:380px;"></div>
+
+<!-- ── Setup link modal (shown when SMTP not configured) ─────────────────── -->
+<div id="setupLinkModal" class="sa-modal-bg fixed inset-0 z-50 flex items-center justify-center hidden">
+    <div class="sa-modal-box w-full max-w-lg mx-4 overflow-hidden">
+        <div class="px-6 py-5" style="background:linear-gradient(135deg,#1c1400,#2a1f00);border-bottom:1px solid rgba(245,158,11,0.2);">
+            <div class="flex items-center justify-between">
+                <div class="flex items-center gap-3">
+                    <div class="w-8 h-8 rounded-xl flex items-center justify-center" style="background:rgba(245,158,11,0.15);">
+                        <i class="fas fa-link text-amber-400 text-sm"></i>
+                    </div>
+                    <div>
+                        <h3 class="text-white font-bold text-base leading-tight">Share Setup Link</h3>
+                        <p class="text-amber-600 text-xs mt-0.5">SMTP not configured — copy and send manually</p>
+                    </div>
+                </div>
+                <button onclick="closeModal('setupLinkModal')" class="text-gray-500 hover:text-gray-300"><i class="fas fa-times"></i></button>
+            </div>
+        </div>
+        <div class="p-6 space-y-4">
+            <p class="text-sm text-gray-400">
+                Send this link to the administrator of <strong class="text-gray-200" id="setupLinkOrgName"></strong>.
+                It expires in 72 hours.
+            </p>
+            <div class="flex gap-2">
+                <input id="setupLinkUrl" type="text" readonly class="sa-input flex-1 text-xs font-mono" style="color:#94a3b8;">
+                <button onclick="copySetupLink()"
+                        class="btn-amber px-4 flex-shrink-0 flex items-center gap-2">
+                    <i class="fas fa-copy text-sm"></i> Copy
+                </button>
+            </div>
+            <button onclick="closeModal('setupLinkModal')" class="btn-ghost w-full">Close</button>
+        </div>
+    </div>
+</div>
+
+<!-- ── Inactivity warning modal ──────────────────────────────────────────── -->
+<div id="idleWarningModal"
+     class="fixed inset-0 z-[99999] hidden items-center justify-center"
+     style="background:rgba(0,0,0,0.75);backdrop-filter:blur(6px);">
+    <div class="bg-white rounded-2xl shadow-2xl w-full max-w-sm mx-4 overflow-hidden">
+        <div class="px-6 py-5 text-center" style="background:linear-gradient(135deg,#0f172a,#1e293b);">
+            <div class="w-14 h-14 rounded-full flex items-center justify-center mx-auto mb-3"
+                 style="background:rgba(245,158,11,0.15);border:2px solid rgba(245,158,11,0.4);">
+                <i class="fas fa-clock text-yellow-400 text-2xl"></i>
+            </div>
+            <h3 class="text-white font-bold text-lg">Session Expiring</h3>
+            <p class="text-gray-400 text-sm mt-1">You have been inactive</p>
+        </div>
+        <div class="px-6 py-5 text-center">
+            <p class="text-gray-600 text-sm mb-1">You will be signed out in</p>
+            <div class="text-5xl font-bold text-red-600 my-3" id="idleCountdown">120</div>
+            <p class="text-gray-500 text-xs mb-5">seconds due to inactivity</p>
+            <button onclick="stayLoggedIn()"
+                    class="w-full py-3 rounded-xl font-semibold text-white text-sm"
+                    style="background:linear-gradient(135deg,#f59e0b,#d97706);">
+                <i class="fas fa-check mr-2"></i>I'm still here — Keep me signed in
+            </button>
+            <button onclick="HydroAuth.logout()"
+                    class="w-full py-2.5 mt-2 rounded-xl font-medium text-gray-500 text-sm border border-gray-200 hover:bg-gray-50 transition-all">
+                Sign out now
+            </button>
+        </div>
+    </div>
+</div>
+
+</body>
+</html>

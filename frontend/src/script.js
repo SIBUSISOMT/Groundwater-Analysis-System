@@ -134,9 +134,10 @@ class TablePagination {
 
 class AIEnhancedGroundwaterSystem {
 constructor() {
+    const _backend = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
     this.apiEndpoints = [
-        'http://localhost:5000/api',
-        'http://127.0.0.1:5000/api'
+        `${_backend}/api`,
+        `${_backend.replace('localhost', '127.0.0.1')}/api`,
     ];
     this.apiBase = this.apiEndpoints[0];
     this.charts = {};

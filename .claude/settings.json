@@ -2,7 +2,16 @@
   "permissions": {
     "allow": [
       "WebFetch(domain:scisynopsisconferences.com)",
-      "WebFetch(domain:icaw.online)"
+      "WebFetch(domain:icaw.online)",
+      "Bash(pip install:*)",
+      "Bash(python -c \"from auth import auth_bp, init_auth, require_auth, _audit; print\\('auth.py imports OK'\\)\")",
+      "Bash(python -c ':*)",
+      "Read(//c/Users/sbusi/.claude/projects/c--Users-sbusi-OneDrive-Desktop-Groundwater-Analysis-System/**)",
+      "Bash(python run_server.py)",
+      "Bash(pip show:*)"
+    ],
+    "additionalDirectories": [
+      "c:\\Users\\sbusi\\.claude\\projects\\c--Users-sbusi-OneDrive-Desktop-Groundwater-Analysis-System\\memory"
     ]
   }
 }
