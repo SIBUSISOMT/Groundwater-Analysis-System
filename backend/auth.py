@@ -35,6 +35,8 @@ from flask_jwt_extended import (
     verify_jwt_in_request,
 )
 
+from extensions import limiter
+
 logger = logging.getLogger(__name__)
 
 auth_bp = Blueprint("auth", __name__)
@@ -47,7 +49,6 @@ REFRESH_TOKEN_DAYS  = 7
 
 # Set by init_auth()
 _db      = None
-_limiter = None
 
 # ── MFA session store (in-memory, server-local) ───────────────────────────────
 _mfa_sessions: dict = {}  # { session_id: { user_id, expires } }
@@ -72,14 +73,16 @@ def _consume_mfa_session(sid: str):
 # Initialisation
 # ═════════════════════════════════════════════════════════════════════════════
 
-def init_auth(app, db, limiter):
+def init_auth(app, db, limiter=None):
     """
-    Wire up JWT and the rate-limiter.  Call once during app startup, before
-    any request is served.
+    Wire up JWT.  Call once during app startup, before any request is served.
+    The `limiter` param is accepted for backward compatibility but unused —
+    routes in this module rate-limit via the shared `extensions.limiter`
+    imported directly above, since decorators here run at import time
+    (before app.py finishes constructing its own limiter reference).
     """
-    global _db, _limiter
-    _db      = db
-    _limiter = limiter
+    global _db
+    _db = db
 
     # JWT secret — persisted to a file so server restarts don't invalidate tokens.
     # In production, override with the JWT_SECRET_KEY environment variable.
@@ -277,7 +280,11 @@ def _audit(user_id, action: str, resource: str = None,
 
 
 def _generate_account_setup_token(user_id: int) -> tuple:
-    """Generate a new setup token + TOTP secret, store them on the user, return both."""
+    """Generate a new setup token + TOTP secret, store them on the user, return both.
+
+    Only the SHA-256 hash is persisted (same pattern as refresh tokens) — the raw
+    token exists only in the email link / admin-facing response.
+    """
     setup_token   = secrets.token_urlsafe(48)
     totp_secret   = pyotp.random_base32()
     expires       = datetime.now(timezone.utc) + timedelta(hours=72)
@@ -286,7 +293,7 @@ def _generate_account_setup_token(user_id: int) -> tuple:
             "UPDATE dbo.Users SET account_setup_token = ?, setup_token_expires = ?,"
             " totp_secret = ?, totp_enabled = 0, is_active = 0, setup_completed = 0"
             " WHERE user_id = ?",
-            (setup_token, expires, totp_secret, user_id), fetch=False,
+            (_hash_token(setup_token), expires, totp_secret, user_id), fetch=False,
         )
     except Exception as exc:
         logger.error('_generate_account_setup_token failed: %s', exc)
@@ -340,6 +347,40 @@ def _clear_refresh_cookie(response):
 # Access-control decorator
 # ═════════════════════════════════════════════════════════════════════════════
 
+def verify_jwt_claims(roles=None):
+    """
+    Core JWT verification shared by every access-control decorator in the app
+    (require_auth here, require_system_admin in admin_bp.py, require_wq_auth in
+    wq_bp.py) so the three blueprints' security gates can't drift out of sync on
+    the actual verification logic — each decorator still owns its own `g.*`
+    attribute contract and any extra authorization checks (e.g. is_system_admin).
+
+    Returns (claims, None) on success.
+    Returns (claims, (response, status)) if the request is authenticated but
+    fails the optional `roles` allow-list (claims is still populated so callers
+    can log who was denied).
+    Returns (None, (response, status)) if the request isn't authenticated at all.
+    """
+    try:
+        verify_jwt_in_request()
+    except Exception:
+        return None, (jsonify({
+            "success": False,
+            "error": "Authentication required. Please log in.",
+            "error_code": "UNAUTHORIZED",
+        }), 401)
+
+    claims = get_jwt()
+    if roles and claims.get("role", "viewer") not in roles:
+        return claims, (jsonify({
+            "success": False,
+            "error": "You do not have permission to perform this action.",
+            "error_code": "FORBIDDEN",
+        }), 403)
+
+    return claims, None
+
+
 def require_auth(roles=None):
     """
     Decorator to protect Flask routes with JWT authentication.
@@ -360,33 +401,17 @@ def require_auth(roles=None):
     def decorator(f):
         @wraps(f)
         def decorated(*args, **kwargs):
-            try:
-                verify_jwt_in_request()
-            except Exception:
-                return jsonify({
-                    "success": False,
-                    "error": "Authentication required. Please log in.",
-                    "error_code": "UNAUTHORIZED",
-                }), 401
+            claims, err = verify_jwt_claims(roles)
+            if err:
+                if claims is not None:
+                    _audit(int(get_jwt_identity()), "ACCESS_DENIED", request.path,
+                           f"Role '{claims.get('role')}' not in {roles}", success=False)
+                return err
 
-            claims   = get_jwt()
-            user_id  = int(get_jwt_identity())
-            role     = claims.get("role", "viewer")
-            username = claims.get("username", "")
-
-            if roles and role not in roles:
-                _audit(user_id, "ACCESS_DENIED", request.path,
-                       f"Role '{role}' not in {roles}", success=False)
-                return jsonify({
-                    "success": False,
-                    "error": "You do not have permission to perform this action.",
-                    "error_code": "FORBIDDEN",
-                }), 403
-
-            g.current_user_id   = user_id
-            g.current_user_role = role
-            g.current_username  = username
-            g.current_user_plan = claims.get("plan", "basic")
+            g.current_user_id     = int(get_jwt_identity())
+            g.current_user_role   = claims.get("role", "viewer")
+            g.current_username    = claims.get("username", "")
+            g.current_user_plan   = claims.get("plan", "basic")
             g.current_user_org_id = int(claims.get("org_id", 1))
             return f(*args, **kwargs)
 
@@ -399,6 +424,7 @@ def require_auth(roles=None):
 # ═════════════════════════════════════════════════════════════════════════════
 
 @auth_bp.route("/api/auth/setup", methods=["POST"])
+@limiter.limit("5 per hour")
 def setup_first_admin():
     """
     One-time bootstrap: creates the very first admin account.
@@ -465,6 +491,7 @@ def setup_first_admin():
 
 
 @auth_bp.route("/api/auth/login", methods=["POST"])
+@limiter.limit("10 per minute")
 def login():
     """Authenticate a user and return an access token + refresh cookie."""
     data     = request.get_json(silent=True) or {}
@@ -591,6 +618,7 @@ def login():
 
 
 @auth_bp.route("/api/auth/refresh", methods=["POST"])
+@limiter.limit("30 per minute")
 def refresh():
     """
     Exchange a refresh token for a new access token.
@@ -752,6 +780,7 @@ def change_password():
 
 
 @auth_bp.route("/api/auth/register", methods=["POST"])
+@limiter.limit("5 per hour")
 def register():
     """Public self-registration — creates a Basic-plan Viewer account, then auto-logs in."""
     data     = request.get_json(silent=True) or {}
@@ -793,7 +822,7 @@ def register():
     _audit(new_id, "REGISTER", "auth", f"Self-registered: {username} in org {org_id}")
 
     # Auto-login after registration
-    claims        = {"role": "viewer", "username": username, "plan": "basic"}
+    claims        = {"role": "viewer", "username": username, "plan": "basic", "org_id": org_id}
     access_token  = create_access_token(identity=str(new_id), additional_claims=claims)
     refresh_token = create_refresh_token(identity=str(new_id))
     _store_refresh_token(
@@ -915,7 +944,7 @@ def create_user():
             "  is_active, totp_secret, totp_enabled, account_setup_token, setup_token_expires, setup_completed)"
             " OUTPUT INSERTED.user_id VALUES (?, ?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, 0)",
             (username, email, temp_hash, role, plan, g.current_user_id, g.current_user_org_id,
-             totp_secret, setup_token, token_expires),
+             totp_secret, _hash_token(setup_token), token_expires),
             fetch=True, commit=True,
         )
     except Exception:
@@ -926,7 +955,7 @@ def create_user():
                 "  is_active, totp_secret, totp_enabled, account_setup_token, setup_token_expires, setup_completed)"
                 " OUTPUT INSERTED.user_id VALUES (?, ?, ?, ?, ?, ?, 0, ?, 0, ?, ?, 0)",
                 (username, email, temp_hash, role, plan, g.current_user_id,
-                 totp_secret, setup_token, token_expires),
+                 totp_secret, _hash_token(setup_token), token_expires),
                 fetch=True, commit=True,
             )
         except Exception:
@@ -1089,6 +1118,7 @@ def get_audit_log():
 # ── 2FA verification ──────────────────────────────────────────────────────────
 
 @auth_bp.route("/api/auth/verify-2fa", methods=["POST"])
+@limiter.limit("10 per minute")
 def verify_2fa():
     data       = request.get_json(silent=True) or {}
     session_id = data.get("mfa_session_id") or ""
@@ -1149,6 +1179,7 @@ def verify_2fa():
 # ── Account setup (via email link) ────────────────────────────────────────────
 
 @auth_bp.route("/api/auth/validate-setup-token", methods=["GET"])
+@limiter.limit("20 per minute")
 def validate_setup_token():
     token = request.args.get("token", "").strip()
     if not token:
@@ -1160,7 +1191,7 @@ def validate_setup_token():
             " LEFT JOIN dbo.Organizations o ON u.org_id = o.org_id"
             " WHERE u.account_setup_token = ? AND u.setup_token_expires > GETDATE()"
             " AND u.setup_completed = 0",
-            (token,)
+            (_hash_token(token),)
         )
     except Exception as exc:
         return jsonify({"valid": False, "error": str(exc)}), 500
@@ -1181,6 +1212,7 @@ def validate_setup_token():
 
 
 @auth_bp.route("/api/auth/complete-setup", methods=["POST"])
+@limiter.limit("10 per minute")
 def complete_setup():
     data      = request.get_json(silent=True) or {}
     token     = (data.get("token") or "").strip()
@@ -1198,7 +1230,7 @@ def complete_setup():
         rows = _q(
             "SELECT user_id, username, email, totp_secret FROM dbo.Users"
             " WHERE account_setup_token = ? AND setup_token_expires > GETDATE() AND setup_completed = 0",
-            (token,)
+            (_hash_token(token),)
         )
     except Exception as exc:
         return jsonify({"success": False, "error": str(exc)}), 500
@@ -1245,7 +1277,7 @@ def reset_user_2fa(target_id):
             "UPDATE dbo.Users SET totp_secret = ?, totp_enabled = 0,"
             " account_setup_token = ?, setup_token_expires = ?, setup_completed = 0, is_active = 0"
             " WHERE user_id = ?",
-            (new_secret, setup_token, token_expires, target_id), fetch=False,
+            (new_secret, _hash_token(setup_token), token_expires, target_id), fetch=False,
         )
         rows = _q("SELECT username, email FROM dbo.Users WHERE user_id = ?", (target_id,))
     except Exception as exc:
@@ -1277,7 +1309,7 @@ def resend_user_setup(target_id):
             "UPDATE dbo.Users SET totp_secret = ?, account_setup_token = ?,"
             " setup_token_expires = ?, totp_enabled = 0, is_active = 0, setup_completed = 0"
             " WHERE user_id = ?",
-            (new_secret, setup_token, token_expires, target_id), fetch=False,
+            (new_secret, _hash_token(setup_token), token_expires, target_id), fetch=False,
         )
         rows = _q("SELECT username, email FROM dbo.Users WHERE user_id = ?", (target_id,))
     except Exception as exc:

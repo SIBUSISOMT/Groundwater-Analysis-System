@@ -17,9 +17,8 @@
 const HydroAuth = (function () {
     'use strict';
 
-    // When served via Live Server (or any port other than Flask's 5000),
-    // all auth API calls must use the absolute backend URL.
-    const _BACKEND    = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
+    // Requires config.js to be loaded first (defines window.HC_BACKEND_URL).
+    const _BACKEND    = window.HC_BACKEND_URL;
     const _CREDS      = _BACKEND ? 'include' : 'same-origin';
 
     const LOGIN_PAGE  = '/frontend/public/login.html';

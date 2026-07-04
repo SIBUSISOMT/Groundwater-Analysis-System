@@ -1,6 +1,6 @@
 class AdvancedGroundwaterReports {
             constructor() {
-                const _backend = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
+                const _backend = window.HC_BACKEND_URL;
                 this.apiBase = `${_backend}/api`;
                 this.allData = [];
                 this.filteredData = [];
@@ -590,10 +590,10 @@ updateFailureTrendsChart() {
             
             searchData(query) {
                 if (!query.trim()) {
-                    this.filteredData = this.isFiltered ? this.filteredData : this.allData;
+                    this.filteredData = this.allData;
                 } else {
                     const searchLower = query.toLowerCase();
-                    const baseData = this.isFiltered ? this.filteredData : this.allData;
+                    const baseData = this.allData;
                     this.filteredData = baseData.filter(row => {
                         return Object.values(row).some(val => 
                             String(val).toLowerCase().includes(searchLower)

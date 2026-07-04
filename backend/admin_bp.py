@@ -10,8 +10,11 @@ from datetime import datetime, timedelta, timezone
 
 import bcrypt
 from flask import Blueprint, g, jsonify, request
-from flask_jwt_extended import get_jwt, get_jwt_identity, verify_jwt_in_request
+from flask_jwt_extended import get_jwt_identity
 from functools import wraps
+
+from extensions import limiter
+from auth import verify_jwt_claims
 
 logger = logging.getLogger(__name__)
 admin_bp = Blueprint('admin', __name__)
@@ -30,11 +33,9 @@ def _q(sql, params=None, fetch=True, commit=False):
 def require_system_admin(f):
     @wraps(f)
     def decorated(*args, **kwargs):
-        try:
-            verify_jwt_in_request()
-        except Exception:
-            return jsonify({'success': False, 'error': 'Authentication required.', 'error_code': 'UNAUTHORIZED'}), 401
-        claims = get_jwt()
+        claims, err = verify_jwt_claims()
+        if err:
+            return err
         if not claims.get('is_system_admin'):
             return jsonify({'success': False, 'error': 'System administrator access required.', 'error_code': 'FORBIDDEN'}), 403
         g.sysadmin_id = int(get_jwt_identity())
@@ -44,6 +45,7 @@ def require_system_admin(f):
 # ── Setup first system admin ──────────────────────────────────────────────────
 
 @admin_bp.route('/api/admin/setup', methods=['POST'])
+@limiter.limit("5 per hour")
 def setup_system_admin():
     """One-time endpoint to create the first system administrator."""
     try:

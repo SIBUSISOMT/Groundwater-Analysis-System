@@ -1,7 +1,7 @@
 // Failure Analysis Dashboard - failure-analysis.js
 class FailureAnalysisDashboard {
     constructor() {
-        const _backend = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
+        const _backend = window.HC_BACKEND_URL;
         this.apiBase = `${_backend}/api`;
         this.allData = [];
         this.filteredData = [];

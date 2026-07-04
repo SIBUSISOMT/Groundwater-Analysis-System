@@ -1,3 +1,12 @@
+function escapeHtml(str) {
+    return String(str == null ? '' : str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+}
+
 // ADD this new Pagination class before the AIEnhancedGroundwaterSystem class:
 class TablePagination {
     constructor(containerId, rowsPerPage = 15) {
@@ -134,7 +143,7 @@ class TablePagination {
 
 class AIEnhancedGroundwaterSystem {
 constructor() {
-    const _backend = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
+    const _backend = window.HC_BACKEND_URL;
     this.apiEndpoints = [
         `${_backend}/api`,
         `${_backend.replace('localhost', '127.0.0.1')}/api`,
@@ -820,16 +829,20 @@ async loadCatchments() {
             
             // Enhanced error explanation with AI help
             if (analysisContent) {
+                const _safeMsg = String(error.message).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
                 analysisContent.innerHTML = `
                     <div class="text-red-700">
                         <i class="fas fa-exclamation-triangle mr-2"></i>
-                        Upload failed: ${error.message}
+                        Upload failed: ${_safeMsg}
                     </div>
-                    <button onclick="app.aiAssistant.explainError('Upload failed: ${error.message.replace(/'/g, "\\'")}', {file: '${file.name}', category: '${category}', subcatchment: '${subcatchment}'})" 
-                            class="text-blue-600 hover:text-blue-800 text-sm mt-2 block">
+                    <button id="_uploadErrAiBtn" class="text-blue-600 hover:text-blue-800 text-sm mt-2 block">
                         <i class="fas fa-robot mr-1"></i>Get AI help with this error
                     </button>
                 `;
+                const _aiBtn = document.getElementById('_uploadErrAiBtn');
+                if (_aiBtn) _aiBtn.addEventListener('click', () => {
+                    app.aiAssistant.explainError(`Upload failed: ${error.message}`, { file: file.name, category, subcatchment });
+                });
             }
             
             // Ask AI to help with the error
@@ -1445,7 +1458,7 @@ async loadFailureAnalysis(filters) {
         this.pagination.failureAnalysisTable.setData(data);
         const pageData = this.pagination.failureAnalysisTable.getCurrentPageData();
         
-        // ... rest of table rendering code ...
+        this.updateFailureAnalysisTable({ failure_analysis: data, summary: result.summary || null });
         
     } catch (error) {
         this.diagnostics.log(`Failure analysis failed: ${error.message}`, 'warning');
@@ -2302,11 +2315,11 @@ debugCurrentData() {
         messageEl.className = `mb-3 p-3 rounded border ${colors[type] || colors.info}`;
         messageEl.innerHTML = `
             <div class="flex justify-between items-center">
-                <span class="text-sm">${message}</span>
+                <span class="text-sm">${escapeHtml(message)}</span>
                 <button onclick="this.parentElement.parentElement.remove()" class="ml-2 text-lg font-bold opacity-70 hover:opacity-100">&times;</button>
             </div>
         `;
-        
+
         container.appendChild(messageEl);
         
         setTimeout(() => {
@@ -2923,7 +2936,7 @@ class AdvancedAIAssistant {
         messageEl.className = sender === 'user' ? 'user-message' : 'ai-message';
         
         if (sender === 'user') {
-            messageEl.innerHTML = `<p class="text-sm">${message}</p>`;
+            messageEl.innerHTML = `<p class="text-sm">${escapeHtml(message)}</p>`;
         } else {
             const typeIcons = {
                 'methodology': 'fas fa-book',
@@ -2958,8 +2971,8 @@ class AdvancedAIAssistant {
     }
     
     formatMessage(message) {
-        let formatted = message;
-        
+        let formatted = escapeHtml(message);
+
         const technicalTerms = {
             'Z-score': '<span class="font-semibold text-blue-600">Z-score</span>',
             'reliability': '<span class="font-semibold text-green-600">reliability</span>',
@@ -2973,7 +2986,7 @@ class AdvancedAIAssistant {
             formatted = formatted.replace(regex, replacement);
         });
         
-        formatted = formatted.replace(/\b\d+\.?\d*%/g, '<span class="font-semibold text-gray-800">        this.contextUpdate</span>');
+        formatted = formatted.replace(/\b(\d+\.?\d*)%/g, '<span class="font-semibold text-gray-800">$1%</span>');
         formatted = formatted.replace(/([A-Z] = [^.]+)/g, '<code class="bg-gray-100 px-1 py-0.5 rounded text-sm">$1</code>');
         
         return formatted;

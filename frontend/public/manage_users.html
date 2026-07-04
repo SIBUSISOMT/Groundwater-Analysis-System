@@ -6,6 +6,7 @@
     <title>HydroCore — Manage Users</title>
     <!-- Auth guard -->
     <style>body { display: none; }</style>
+    <script src="/frontend/src/config.js"></script>
     <script src="/frontend/src/auth.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
@@ -89,6 +90,7 @@
 
         <nav class="mt-6 overflow-y-auto flex-1 pb-4 px-3">
             <div class="space-y-1">
+                <p class="px-4 mt-2 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Hydrology</p>
                 <a href="/frontend/public/index.html"
                    class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
                     <i class="nav-icon fas fa-th-large mr-3 w-5 text-center"></i>
@@ -109,14 +111,27 @@
                     <i class="nav-icon fas fa-cloud-upload-alt mr-3 w-5 text-center"></i>
                     <span>Data Source Upload</span>
                 </a>
+            </div>
+
+            <div class="nav-divider"></div>
+            <p class="px-4 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Water Quality</p>
+            <div class="space-y-1">
+                <a href="/frontend/public/water_quality.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-vial mr-3 w-5 text-center"></i>
+                    <span>Water Quality</span>
+                </a>
+            </div>
+
+            <div class="nav-divider"></div>
+            <p class="px-4 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Administration</p>
+            <div class="space-y-1">
                 <a href="#"
                    class="nav-item active flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-white">
                     <i class="nav-icon fas fa-users-cog mr-3 w-5 text-center"></i>
                     <span>Manage Users</span>
                 </a>
             </div>
-
-            <div class="nav-divider"></div>
 
         </nav>
         <div class="px-3 py-3 border-t border-white border-opacity-10 flex-shrink-0">
@@ -461,8 +476,7 @@
     </div>
 
     <script>
-    const _BACKEND = (window.location.port === '5000' || window.location.port === '')
-        ? '' : 'http://localhost:5000';
+    const _BACKEND = window.HC_BACKEND_URL;
 
     document.querySelectorAll('.footer-year').forEach(el => el.textContent = new Date().getFullYear());
 

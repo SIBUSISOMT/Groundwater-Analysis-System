@@ -11,7 +11,7 @@ const _DUMMY_SOURCES = [
 
 class UploadDashboard {
     constructor(basicMode = false) {
-        const _backend = (window.location.port === '5000' || window.location.port === '') ? '' : 'http://localhost:5000';
+        const _backend = window.HC_BACKEND_URL;
         this.apiBase   = `${_backend}/api`;
         this.basicMode = basicMode;
         this._dsSources       = [];
@@ -21,6 +21,7 @@ class UploadDashboard {
         this._previewChanges  = new Map();
         this._previewSelected = new Set();
         this._previewRecords  = [];
+        this._scenario        = 'single'; // 'single' | 'parameter' | 'bulk'
         this.init();
     }
 
@@ -101,11 +102,14 @@ class UploadDashboard {
         };
 
         on('refreshBtn', 'click', () => {
-            if (this.basicMode) {
-                this.showToast('Live data refresh is a Pro plan feature.', 'warning');
-                return;
-            }
+            if (this.basicMode) { this.showToast('Live data refresh is a Pro plan feature.', 'warning'); return; }
             this.loadDataSources();
+        });
+
+        // Scenario selector buttons
+        const scenarioBtns = document.querySelectorAll('.scenario-btn');
+        scenarioBtns.forEach(btn => {
+            btn.addEventListener('click', () => this._setScenario(btn.dataset.scenario));
         });
 
         const dropZone  = document.getElementById('dropZone');
@@ -135,15 +139,102 @@ class UploadDashboard {
         }
     }
 
+    // ── Scenario switching ───────────────────────────────────────────────────
+
+    _setScenario(scenario) {
+        this._scenario = scenario;
+
+        const catField   = document.getElementById('categoryField');
+        const subField   = document.getElementById('subcatchmentField');
+        const infoText   = document.getElementById('uploadInfoText');
+        const scenarioBtns = document.querySelectorAll('.scenario-btn');
+
+        const COLORS = {
+            single:    { border: 'border-blue-500',   bg: 'bg-blue-50',   text: 'text-blue-700',   badge: 'bg-blue-600' },
+            parameter: { border: 'border-violet-500', bg: 'bg-violet-50', text: 'text-violet-700', badge: 'bg-violet-600' },
+            bulk:      { border: 'border-emerald-500',bg: 'bg-emerald-50',text: 'text-emerald-700',badge: 'bg-emerald-600' },
+        };
+
+        const INFO = {
+            single:    '<strong>Scenario A — Single Upload:</strong> Select one parameter and one catchment, then attach your filled Template A file.',
+            parameter: '<strong>Scenario B — All Catchments:</strong> Select one parameter. Your file must have one sheet per catchment (use Template B). Sheet names must match the catchment names exactly.',
+            bulk:      '<strong>Scenario C — Bulk (All):</strong> Upload all 3 parameters across all 7 catchments at once. Use Template C — each sheet covers one catchment with 3 side-by-side data sections.',
+        };
+
+        scenarioBtns.forEach(btn => {
+            const s = btn.dataset.scenario;
+            const c = COLORS[s];
+            const span = btn.querySelector('span');
+            if (s === scenario) {
+                btn.className = `scenario-btn px-4 py-2 rounded-lg border-2 ${c.border} ${c.bg} ${c.text} font-semibold text-sm flex items-center gap-2 transition-all`;
+                if (span) span.className = `w-5 h-5 rounded ${c.badge} text-white text-xs font-bold flex items-center justify-center`;
+            } else {
+                btn.className = 'scenario-btn px-4 py-2 rounded-lg border-2 border-gray-200 text-gray-500 font-semibold text-sm flex items-center gap-2 transition-all hover:border-gray-400';
+                if (span) span.className = 'w-5 h-5 rounded bg-gray-400 text-white text-xs font-bold flex items-center justify-center';
+            }
+        });
+
+        if (catField)  catField.style.display  = (scenario === 'bulk') ? 'none' : '';
+        if (subField)  subField.style.display  = (scenario === 'single') ? '' : 'none';
+        if (infoText)  infoText.innerHTML = INFO[scenario] || '';
+    }
+
+    // ── Template download ────────────────────────────────────────────────────
+
+    async downloadTemplate(type) {
+        if (this.basicMode) { this.showToast('Template download requires a Pro plan.', 'warning'); return; }
+
+        const params = new URLSearchParams({ type });
+
+        if (type === 'single') {
+            const cat   = (document.getElementById('tplACat')   || {}).value;
+            const catch_ = (document.getElementById('tplACatch') || {}).value;
+            if (!cat)   { this.showToast('Please select a parameter for Template A.', 'warning'); return; }
+            if (!catch_){ this.showToast('Please select a catchment for Template A.', 'warning'); return; }
+            params.set('category', cat);
+            params.set('catchment', catch_);
+        }
+
+        if (type === 'parameter') {
+            const cat = (document.getElementById('tplBCat') || {}).value;
+            if (!cat) { this.showToast('Please select a parameter for Template B.', 'warning'); return; }
+            params.set('category', cat);
+        }
+
+        try {
+            const res = await fetch(`${this.apiBase}/templates?${params}`);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            const blob = await res.blob();
+            const cd   = res.headers.get('Content-Disposition') || '';
+            const name = (cd.match(/filename="?([^";]+)"?/) || [])[1] || `template_${type}.xlsx`;
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.showToast(`Template "${name}" downloaded.`, 'success');
+        } catch (err) {
+            this.showToast(`Download failed: ${err.message}`, 'error');
+        }
+    }
+
     // ── File upload ──────────────────────────────────────────────────────────
 
     async handleFileUpload(file) {
-        const category     = document.getElementById('categorySelect').value;
-        const subcatchment = document.getElementById('subcatchmentSelect').value;
+        const scenario     = this._scenario || 'single';
+        const category     = (document.getElementById('categorySelect') || {}).value || '';
+        const subcatchment = (document.getElementById('subcatchmentSelect') || {}).value || '';
 
-        if (!category || !subcatchment) {
-            this.showToast('Please select both category and subcatchment', 'error');
-            return;
+        // Validate inputs per scenario
+        if (scenario === 'single') {
+            if (!category)     { this.showToast('Please select a category', 'error'); return; }
+            if (!subcatchment) { this.showToast('Please select a subcatchment', 'error'); return; }
+        } else if (scenario === 'parameter') {
+            if (!category) { this.showToast('Please select a category for Scenario B', 'error'); return; }
         }
         if (!file.name.match(/\.(xlsx|xls)$/i)) {
             this.showToast('Please select an Excel file (.xlsx or .xls)', 'error');
@@ -154,39 +245,105 @@ class UploadDashboard {
             return;
         }
 
-        this.showLoading('Uploading and processing file…');
+        const labels = { single: 'single-upload', parameter: 'all-catchments', bulk: 'bulk' };
+        this.showLoading(`Processing ${labels[scenario] || ''} file…`);
+
         try {
             const fd = new FormData();
             fd.append('file', file);
-            fd.append('category', category);
-            fd.append('subcatchment', subcatchment);
 
-            const res    = await fetch(`${this.apiBase}/upload`, { method: 'POST', body: fd });
+            let endpoint;
+            if (scenario === 'single') {
+                fd.append('category', category);
+                fd.append('subcatchment', subcatchment);
+                endpoint = `${this.apiBase}/upload`;
+            } else {
+                fd.append('mode', scenario);
+                if (scenario === 'parameter') fd.append('category', category.toLowerCase());
+                endpoint = `${this.apiBase}/upload/bulk`;
+            }
+
+            const res    = await fetch(endpoint, { method: 'POST', body: fd });
             const result = await res.json();
 
             if (!res.ok) {
                 if (res.status === 401 || res.status === 403) {
-                    throw new Error('You do not have permission to upload files. Only admins and analysts can upload data.');
+                    throw new Error(result.error || 'You do not have permission to upload files.');
                 }
                 throw new Error(result.error || 'Upload failed. Please check the file format and try again.');
             }
 
-            this.showToast(`Uploaded! ${result.processed_records || 0} records processed`, 'success');
+            const count = result.processed_records || 0;
+            if (scenario === 'single') {
+                this.showToast(`Uploaded! ${count} records processed`, 'success');
+            } else {
+                const errCount = result.error_count || 0;
+                const msg = errCount
+                    ? `Bulk upload complete. ${count} records inserted, ${errCount} errors.`
+                    : `Bulk upload complete! ${count} records inserted across ${(result.summary || []).filter(s => s.inserted > 0).length} catchment(s).`;
+                this.showToast(msg, errCount ? 'warning' : 'success');
+                if (result.summary && result.summary.length) {
+                    this._showBulkSummary(result.summary);
+                }
+            }
 
-            document.getElementById('fileInput').value            = '';
-            document.getElementById('categorySelect').value       = '';
-            document.getElementById('subcatchmentSelect').value   = '';
-
+            document.getElementById('fileInput').value = '';
+            if (scenario === 'single') {
+                document.getElementById('categorySelect').value     = '';
+                document.getElementById('subcatchmentSelect').value = '';
+            }
             const dz = document.getElementById('dropZone');
-            if (dz) dz.querySelector('p').textContent = 'Click or drag Excel file here';
+            if (dz) { const p = dz.querySelector('p'); if (p) p.textContent = 'Click or drag Excel file here'; }
 
             await this.loadDataSources();
         } catch (err) {
-            console.error('Upload failed:', err);
             this.showToast(`Upload failed: ${err.message}`, 'error');
         } finally {
             this.hideLoading();
         }
+    }
+
+    _showBulkSummary(summary) {
+        const lines = summary.map(s =>
+            s.status === 'skipped'
+                ? `<tr><td class="px-3 py-1.5 text-gray-400 italic">${s.sheet}</td><td colspan="3" class="px-3 py-1.5 text-gray-400 text-xs">${s.reason}</td></tr>`
+                : `<tr><td class="px-3 py-1.5 font-medium">${s.catchment || s.sheet}</td>
+                   <td class="px-3 py-1.5 text-center">${s.inserted || 0}</td>
+                   <td class="px-3 py-1.5 text-center text-red-600">${s.errors || 0}</td>
+                   <td class="px-3 py-1.5 text-xs text-gray-500">${s.mode || ''}</td></tr>`
+        ).join('');
+
+        const modal = document.createElement('div');
+        modal.className = 'fixed inset-0 bg-black bg-opacity-50 z-50 flex items-center justify-center p-4';
+        modal.innerHTML = `
+            <div class="bg-white rounded-xl shadow-2xl w-full max-w-lg">
+                <div class="px-6 py-4 border-b bg-gradient-to-r from-emerald-600 to-teal-600 rounded-t-xl flex items-center justify-between">
+                    <h3 class="text-white font-bold text-lg">Bulk Upload Summary</h3>
+                    <button onclick="this.closest('.fixed').remove()" class="text-white hover:bg-white hover:bg-opacity-20 rounded-lg p-1.5 transition-all">
+                        <i class="fas fa-times"></i>
+                    </button>
+                </div>
+                <div class="overflow-auto max-h-96 p-4">
+                    <table class="w-full text-sm">
+                        <thead class="bg-gray-50 text-xs text-gray-600 uppercase tracking-wide">
+                            <tr>
+                                <th class="px-3 py-2 text-left">Catchment</th>
+                                <th class="px-3 py-2 text-center">Inserted</th>
+                                <th class="px-3 py-2 text-center">Errors</th>
+                                <th class="px-3 py-2 text-left">Mode</th>
+                            </tr>
+                        </thead>
+                        <tbody class="divide-y divide-gray-100">${lines}</tbody>
+                    </table>
+                </div>
+                <div class="px-6 py-4 border-t text-right">
+                    <button onclick="this.closest('.fixed').remove()"
+                            class="px-5 py-2 bg-emerald-600 text-white rounded-lg hover:bg-emerald-700 font-semibold text-sm">
+                        Close
+                    </button>
+                </div>
+            </div>`;
+        document.body.appendChild(modal);
     }
 
     // ── Data sources ─────────────────────────────────────────────────────────
@@ -287,14 +444,19 @@ class UploadDashboard {
                 <td class="px-4 py-3 text-center">
                     ${this.basicMode
                         ? `<span class="text-xs text-gray-400 italic">Pro only</span>`
-                        : `<div class="flex items-center justify-center gap-2">
+                        : `<div class="flex items-center justify-center gap-1">
                             <button onclick="app.openPreviewModal(${s.source_id}, '${(s.filename||'').replace(/'/g,"\\'")}', '${s.category||''}', '${(s.subcatchment_name||'').replace(/'/g,"\\'")}' )"
-                                    class="text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-3 py-1 rounded transition-all"
+                                    class="text-blue-600 hover:text-blue-800 hover:bg-blue-50 px-2.5 py-1 rounded transition-all"
                                     title="Preview &amp; edit records">
                                 <i class="fas fa-eye"></i>
                             </button>
+                            <button onclick="app.downloadSource(${s.source_id}, '${(s.filename||'').replace(/'/g,"\\'")}')"
+                                    class="text-emerald-600 hover:text-emerald-800 hover:bg-emerald-50 px-2.5 py-1 rounded transition-all"
+                                    title="Download as Excel">
+                                <i class="fas fa-file-download"></i>
+                            </button>
                             <button onclick="app.deleteSource(${s.source_id})"
-                                    class="text-red-600 hover:text-red-800 hover:bg-red-50 px-3 py-1 rounded transition-all"
+                                    class="text-red-600 hover:text-red-800 hover:bg-red-50 px-2.5 py-1 rounded transition-all"
                                     title="Delete this data source">
                                 <i class="fas fa-trash"></i>
                             </button>
@@ -352,6 +514,30 @@ class UploadDashboard {
                     </button>
                 </div>
             </div>`;
+    }
+
+    // ── Download source ──────────────────────────────────────────────────────
+
+    async downloadSource(sourceId, fileName) {
+        if (this.basicMode) { this.showToast('Download requires a Pro plan.', 'warning'); return; }
+        try {
+            const res = await fetch(`${this.apiBase}/sources/${sourceId}/download`);
+            if (!res.ok) {
+                const err = await res.json().catch(() => ({}));
+                throw new Error(err.error || `HTTP ${res.status}`);
+            }
+            const blob = await res.blob();
+            const name = fileName || `source_${sourceId}.xlsx`;
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = name;
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+            this.showToast(`"${name}" downloaded.`, 'success');
+        } catch (err) {
+            this.showToast(`Download failed: ${err.message}`, 'error');
+        }
     }
 
     // ── Delete source ────────────────────────────────────────────────────────

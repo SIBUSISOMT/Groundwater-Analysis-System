@@ -1,0 +1,1009 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Water Quality — HydroCore</title>
+    <style>body { display: none; }</style>
+    <script src="/frontend/src/config.js"></script>
+    <script src="/frontend/src/auth.js"></script>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"/>
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+    <style>
+        /* ── Sidebar (shared with all HydroCore pages) ──────────────────────── */
+        .enhanced-sidebar {
+            background: linear-gradient(180deg,#0f172a 0%,#1e293b 100%);
+            box-shadow: 4px 0 24px rgba(0,0,0,.12);
+        }
+        .sidebar-header {
+            background: linear-gradient(135deg,#3b82f6 0%,#2563eb 100%);
+            position:relative; overflow:hidden;
+        }
+        .sidebar-header::before {
+            content:''; position:absolute; top:-50%; right:-50%;
+            width:200%; height:200%;
+            background:radial-gradient(circle,rgba(255,255,255,.1) 0%,transparent 70%);
+            animation:sidebarRotate 20s linear infinite;
+        }
+        @keyframes sidebarRotate { 0%{transform:rotate(0deg)} 100%{transform:rotate(360deg)} }
+        .logo-container { position:relative; z-index:1; }
+        .nav-item {
+            position:relative; transition:all .3s cubic-bezier(.4,0,.2,1); overflow:hidden;
+        }
+        .nav-item::before {
+            content:''; position:absolute; left:0; top:0; height:100%; width:4px;
+            background:linear-gradient(180deg,#3b82f6,#8b5cf6);
+            transform:scaleY(0); transition:transform .3s ease;
+        }
+        .nav-item:hover::before,.nav-item.active::before { transform:scaleY(1); }
+        .nav-item.active {
+            background:linear-gradient(90deg,rgba(59,130,246,.15) 0%,rgba(59,130,246,.05) 100%);
+        }
+        .nav-item:hover { background:rgba(59,130,246,.08); transform:translateX(4px); }
+        .nav-icon { transition:all .3s ease; }
+        .nav-item:hover .nav-icon,.nav-item.active .nav-icon { transform:scale(1.1); }
+        .nav-divider {
+            height:1px;
+            background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.1) 50%,transparent 100%);
+            margin:16px 0;
+        }
+
+        /* ── WQ-specific styles ─────────────────────────────────────────────── */
+        :root {
+            --teal-600: #0891b2;
+            --teal-700: #0d9488;
+            --teal-400: #22d3ee;
+            --teal-50:  #ecfeff;
+        }
+        .wq-tab-bar { border-bottom:2px solid #e2e8f0; }
+        .wq-tab {
+            padding:.6rem 1.4rem; font-size:.875rem; font-weight:600;
+            cursor:pointer; border-bottom:3px solid transparent; margin-bottom:-2px;
+            color:#64748b; transition:all .2s;
+        }
+        .wq-tab.active { color:var(--teal-600); border-bottom-color:var(--teal-600); }
+        .wq-tab:hover:not(.active) { color:#334155; }
+
+        .kpi-card {
+            background:#fff; border-radius:16px;
+            border-left:4px solid var(--teal-600);
+            box-shadow:0 2px 12px rgba(0,0,0,.06);
+            transition:transform .2s, box-shadow .2s;
+        }
+        .kpi-card:hover { transform:translateY(-2px); box-shadow:0 6px 20px rgba(0,0,0,.1); }
+        .kpi-label { font-size:.75rem; font-weight:600; color:#64748b; text-transform:uppercase; letter-spacing:.06em; }
+        .kpi-value { font-size:2rem; font-weight:800; color:#0f172a; line-height:1.1; }
+        .kpi-sub   { font-size:.8rem; color:#94a3b8; margin-top:.25rem; }
+
+        /* Compliance matrix */
+        .matrix-wrap { overflow-x:auto; }
+        .matrix-table { border-collapse:separate; border-spacing:3px; min-width:600px; }
+        .matrix-table th {
+            font-size:.7rem; font-weight:700; color:#64748b;
+            text-align:center; padding:.4rem .5rem;
+        }
+        .matrix-table .ind-label {
+            font-size:.72rem; font-weight:600; color:#334155;
+            padding:.4rem .7rem; white-space:nowrap; text-align:right;
+            background:#f8fafc; border-radius:6px;
+        }
+        .matrix-cell {
+            width:42px; height:32px; border-radius:6px; cursor:pointer;
+            transition:transform .15s, box-shadow .15s;
+            position:relative;
+        }
+        .matrix-cell:hover { transform:scale(1.15); box-shadow:0 4px 12px rgba(0,0,0,.2); z-index:10; }
+        .matrix-cell.compliant   { background:#14b8a6; }
+        .matrix-cell.violation   { background:#f43f5e; }
+        .matrix-cell.no-data     { background:#e2e8f0; }
+        .matrix-cell.no-standard { background:#d1fae5; opacity:.7; }
+
+        /* Tooltip */
+        .wq-tooltip {
+            position:fixed; z-index:9999; pointer-events:none; opacity:0;
+            background:#0f172a; color:#f8fafc; font-size:.75rem;
+            border-radius:8px; padding:.5rem .8rem;
+            box-shadow:0 8px 32px rgba(0,0,0,.3);
+            max-width:200px; transition:opacity .15s;
+        }
+        .wq-tooltip.visible { opacity:1; }
+
+        /* Station map */
+        #wq-station-map { height:260px; border-radius:12px; overflow:hidden; }
+
+        /* Alert badge */
+        .alert-badge {
+            display:inline-flex; align-items:center; gap:.3rem;
+            padding:.2rem .65rem; border-radius:99px; font-size:.72rem; font-weight:700;
+        }
+        .alert-badge.above { background:#fef2f2; color:#ef4444; }
+        .alert-badge.below { background:#fef9c3; color:#b45309; }
+
+        /* Section headers */
+        .section-head {
+            font-size:.7rem; font-weight:700; color:#94a3b8;
+            text-transform:uppercase; letter-spacing:.1em;
+            margin-bottom:.6rem;
+        }
+
+        /* Upload drag zone */
+        .upload-zone {
+            border:2px dashed #cbd5e1; border-radius:16px; padding:2.5rem;
+            text-align:center; transition:all .2s; cursor:pointer;
+        }
+        .upload-zone.dragover { border-color:var(--teal-600); background:#ecfeff; }
+        .upload-zone:hover { border-color:var(--teal-600); }
+
+        /* Modals */
+        .wq-modal-backdrop {
+            position:fixed; inset:0; background:rgba(0,0,0,.5);
+            display:flex; align-items:center; justify-content:center; z-index:200;
+        }
+        .wq-modal {
+            background:#fff; border-radius:16px; padding:2rem;
+            width:90%; max-width:500px; max-height:90vh; overflow-y:auto;
+            box-shadow:0 25px 60px rgba(0,0,0,.3);
+        }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width:6px; height:6px; }
+        ::-webkit-scrollbar-track { background:#f1f5f9; border-radius:3px; }
+        ::-webkit-scrollbar-thumb { background:#cbd5e1; border-radius:3px; }
+        ::-webkit-scrollbar-thumb:hover { background:#94a3b8; }
+
+        /* Analytics tab styles */
+        .analytic-card {
+            background:#fff; border-radius:16px; border:1px solid #f1f5f9;
+            box-shadow:0 2px 12px rgba(0,0,0,.05); padding:1.25rem;
+        }
+        .analytic-card .a-head {
+            font-size:.68rem; font-weight:700; color:#94a3b8;
+            text-transform:uppercase; letter-spacing:.1em; margin-bottom:.5rem;
+        }
+        .wqi-gauge {
+            width:160px; height:80px; overflow:visible;
+        }
+        .wqi-score-big {
+            font-size:2.4rem; font-weight:900; line-height:1;
+        }
+        .trophic-pill {
+            display:inline-flex; align-items:center; gap:.35rem;
+            padding:.3rem .8rem; border-radius:99px; font-size:.72rem; font-weight:700;
+        }
+        .trophic-pill.oligo   { background:#d1fae5; color:#065f46; }
+        .trophic-pill.meso    { background:#dbeafe; color:#1e40af; }
+        .trophic-pill.eutro   { background:#fef3c7; color:#92400e; }
+        .trophic-pill.hyper   { background:#fee2e2; color:#991b1b; }
+        .amd-pill {
+            display:inline-flex; align-items:center; gap:.35rem;
+            padding:.3rem .8rem; border-radius:99px; font-size:.72rem; font-weight:700;
+        }
+        .amd-pill.none     { background:#f0fdf4; color:#166534; }
+        .amd-pill.low      { background:#fef9c3; color:#854d0e; }
+        .amd-pill.moderate { background:#fed7aa; color:#9a3412; }
+        .amd-pill.high     { background:#fee2e2; color:#991b1b; }
+        .mk-trend-badge {
+            display:inline-flex; align-items:center; gap:.4rem;
+            padding:.3rem .8rem; border-radius:8px; font-size:.72rem; font-weight:700;
+        }
+        .mk-trend-badge.increasing { background:#dcfce7; color:#166534; }
+        .mk-trend-badge.decreasing { background:#fee2e2; color:#991b1b; }
+        .mk-trend-badge.no-trend   { background:#f1f5f9; color:#475569; }
+        .lsi-bar-track {
+            height:10px; background:#e2e8f0; border-radius:5px; overflow:hidden; position:relative;
+        }
+        .lsi-bar-fill {
+            position:absolute; top:0; height:100%; border-radius:5px; transition:width .5s ease;
+        }
+        .bd-ring {
+            width:90px; height:90px;
+        }
+        .piper-svg-container svg {
+            width:100%; height:auto;
+        }
+        .stiff-svg-row svg {
+            display:block;
+        }
+        .seasonal-bar {
+            display:flex; align-items:center; gap:.5rem; margin-bottom:.35rem;
+        }
+        .seasonal-bar .s-label { font-size:.7rem; color:#64748b; width:60px; flex-shrink:0; }
+        .seasonal-bar .s-track { flex:1; height:8px; background:#e2e8f0; border-radius:4px; overflow:hidden; }
+        .seasonal-bar .s-fill  { height:100%; border-radius:4px; transition:width .4s ease; }
+        .s-fill.wet { background:#0891b2; }
+        .s-fill.dry { background:#f59e0b; }
+
+        @media(max-width:768px) {
+            .enhanced-sidebar { transform:translateX(-100%); transition:transform .3s; }
+            .enhanced-sidebar.open { transform:translateX(0); }
+            .main-content { margin-left:0 !important; }
+        }
+    </style>
+</head>
+
+<body class="bg-gray-50 font-sans antialiased">
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     SIDEBAR
+════════════════════════════════════════════════════════════════════════════ -->
+<div class="enhanced-sidebar fixed left-0 top-0 h-full w-64 z-30 flex flex-col">
+    <div class="sidebar-header flex items-center px-6 py-5 border-b border-white border-opacity-10">
+        <div class="logo-container flex items-center">
+            <div class="flex-shrink-0 mr-3" style="width:44px;height:44px;background:white;border-radius:10px;padding:4px;overflow:hidden;">
+                <img src="/images/ChatGPT%20Image%20Apr%2023,%202026,%2010_17_41%20AM.png" alt="HydroCore"
+                     style="width:100%;height:100%;object-fit:contain;border-radius:6px;">
+            </div>
+            <div>
+                <h1 class="text-base font-bold text-white leading-tight">HydroCore</h1>
+            </div>
+        </div>
+    </div>
+
+    <nav class="mt-6 overflow-y-auto flex-1 pb-4 px-3">
+        <p class="px-4 mt-2 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Hydrology</p>
+        <div class="space-y-1">
+            <a href="/frontend/public/index.html"
+               class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                <i class="nav-icon fas fa-th-large mr-3 w-5 text-center"></i>
+                <span>Dashboard</span>
+            </a>
+            <a href="/frontend/public/Reports.html"
+               class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                <i class="nav-icon fas fa-file-alt mr-3 w-5 text-center"></i>
+                <span>Reports</span>
+            </a>
+            <a href="/frontend/public/analysis_page.html"
+               class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                <i class="nav-icon fas fa-chart-line mr-3 w-5 text-center"></i>
+                <span>Failure Analysis</span>
+            </a>
+            <a href="/frontend/public/upload.html"
+               class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                <i class="nav-icon fas fa-cloud-upload-alt mr-3 w-5 text-center"></i>
+                <span>Data Source Upload</span>
+            </a>
+        </div>
+
+        <div class="nav-divider"></div>
+        <p class="px-4 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Water Quality</p>
+        <div class="space-y-1">
+            <a href="/frontend/public/water_quality.html"
+               class="nav-item active flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-white">
+                <i class="nav-icon fas fa-vial mr-3 w-5 text-center"></i>
+                <span>Water Quality</span>
+            </a>
+        </div>
+
+        <div class="nav-divider"></div>
+        <p class="px-4 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Administration</p>
+        <div class="space-y-1">
+            <a href="/frontend/public/manage_users.html" data-show-for-role="admin"
+               class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white"
+               style="display:none">
+                <i class="nav-icon fas fa-users-cog mr-3 w-5 text-center"></i>
+                <span>Manage Users</span>
+            </a>
+        </div>
+    </nav>
+
+    <div class="px-3 py-3 border-t border-white border-opacity-10 flex-shrink-0">
+        <button onclick="confirmLogout()"
+                class="w-full flex items-center justify-center gap-2 px-3 py-2.5 text-xs
+                       text-gray-400 hover:text-red-300 rounded-lg transition-all duration-200
+                       border border-white border-opacity-10 hover:border-red-500 hover:border-opacity-40
+                       hover:bg-red-900 hover:bg-opacity-30 group">
+            <i class="fas fa-sign-out-alt group-hover:text-red-400 transition-colors"></i>
+            <span>Sign Out</span>
+        </button>
+    </div>
+</div>
+
+<!-- ═══════════════════════════════════════════════════════════════════════════
+     MAIN CONTENT
+════════════════════════════════════════════════════════════════════════════ -->
+<div class="main-content ml-64 min-h-screen" style="padding:0;">
+
+    <!-- Page header -->
+    <div style="background:linear-gradient(135deg,#0f172a 0%,#164e63 60%,#0891b2 100%); padding:1.5rem 2rem .5rem;">
+        <div class="flex items-center justify-between">
+            <div>
+                <div class="flex items-center gap-3">
+                    <div style="width:42px;height:42px;background:rgba(255,255,255,.15);border-radius:10px;display:flex;align-items:center;justify-content:center;">
+                        <i class="fas fa-vial text-cyan-300 text-lg"></i>
+                    </div>
+                    <div>
+                        <h2 class="text-xl font-bold text-white">Water Quality</h2>
+                        <p class="text-xs text-cyan-200">Sampling stations · Compliance monitoring · SANS 241:2015</p>
+                    </div>
+                </div>
+            </div>
+            <div class="flex gap-2">
+                <button id="btn-export" onclick="WQ.exportData()"
+                        class="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white rounded-lg
+                               border border-white border-opacity-20 hover:bg-white hover:bg-opacity-10 transition-all">
+                    <i class="fas fa-file-excel"></i> Export
+                </button>
+                <button onclick="WQ.openStationModal()"
+                        class="flex items-center gap-2 px-4 py-2 text-xs font-semibold text-white rounded-lg
+                               transition-all"
+                        style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                    <i class="fas fa-plus"></i> Add Station
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab bar -->
+        <div class="wq-tab-bar flex mt-5" style="border-color:rgba(255,255,255,.15);">
+            <button class="wq-tab active text-cyan-300" data-tab="overview" onclick="WQ.switchTab('overview')">
+                <i class="fas fa-layer-group mr-1.5"></i>Overview
+            </button>
+            <button class="wq-tab text-gray-300" data-tab="stations" onclick="WQ.switchTab('stations')">
+                <i class="fas fa-map-marker-alt mr-1.5"></i>Stations
+            </button>
+            <button class="wq-tab text-gray-300" data-tab="analysis" onclick="WQ.switchTab('analysis')">
+                <i class="fas fa-microscope mr-1.5"></i>Analysis
+            </button>
+            <button class="wq-tab text-gray-300" data-tab="upload" onclick="WQ.switchTab('upload')">
+                <i class="fas fa-cloud-upload-alt mr-1.5"></i>Upload
+            </button>
+            <button class="wq-tab text-gray-300" data-tab="analytics" onclick="WQ.switchTab('analytics')">
+                <i class="fas fa-atom mr-1.5"></i>Analytics
+            </button>
+            <button class="wq-tab text-gray-300" data-tab="alerts" onclick="WQ.switchTab('alerts')">
+                <i class="fas fa-bell mr-1.5"></i>Alerts
+            </button>
+        </div>
+    </div>
+
+    <div style="padding:1.5rem 2rem;">
+
+        <!-- ════════ OVERVIEW TAB ════════ -->
+        <div id="tab-overview">
+            <!-- KPI row -->
+            <div class="grid grid-cols-4 gap-4 mb-6" id="kpi-row">
+                <div class="kpi-card p-5 col-span-1">
+                    <div class="kpi-label">Active Stations</div>
+                    <div class="kpi-value text-cyan-700" id="kpi-stations">—</div>
+                    <div class="kpi-sub">sampling points</div>
+                </div>
+                <div class="kpi-card p-5">
+                    <div class="kpi-label">Total Readings</div>
+                    <div class="kpi-value text-teal-700" id="kpi-readings">—</div>
+                    <div class="kpi-sub" id="kpi-latest">no data yet</div>
+                </div>
+                <div class="kpi-card p-5">
+                    <div class="kpi-label">Compliance Rate</div>
+                    <div class="kpi-value" id="kpi-compliance-val">—</div>
+                    <div class="kpi-sub">last 90 days</div>
+                </div>
+                <div class="kpi-card p-5">
+                    <div class="kpi-label">Measurements Taken</div>
+                    <div class="kpi-value text-slate-700" id="kpi-meas">—</div>
+                    <div class="kpi-sub" id="kpi-meas-sub">of which compliant</div>
+                </div>
+            </div>
+
+            <div class="grid grid-cols-3 gap-5">
+                <!-- EC trend chart -->
+                <div class="col-span-2 bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                    <div class="flex items-center justify-between mb-4">
+                        <div>
+                            <div class="section-head">Electrical Conductivity Trend</div>
+                            <p class="text-xs text-gray-400">Average EC (mS/m) across all stations — last 12 readings</p>
+                        </div>
+                        <span class="text-xs font-semibold px-2.5 py-1 rounded-full" style="background:#ecfeff;color:#0891b2;">
+                            Limit: 70 mS/m
+                        </span>
+                    </div>
+                    <canvas id="chart-ec-trend" height="100"></canvas>
+                </div>
+
+                <!-- Station map -->
+                <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                    <div class="section-head mb-3">Station Map</div>
+                    <div id="wq-station-map"></div>
+                    <div class="flex gap-3 mt-3 text-xs text-gray-500 justify-center">
+                        <span><span class="inline-block w-3 h-3 rounded-full bg-teal-500 mr-1"></span>Compliant</span>
+                        <span><span class="inline-block w-3 h-3 rounded-full bg-rose-500 mr-1"></span>Violation</span>
+                        <span><span class="inline-block w-3 h-3 rounded-full bg-gray-300 mr-1"></span>No data</span>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Recent alerts -->
+            <div class="mt-5 bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                <div class="section-head mb-3">Recent Compliance Alerts <span class="text-gray-400 font-normal normal-case tracking-normal">(last 30 days)</span></div>
+                <div id="alert-list">
+                    <p class="text-gray-400 text-sm text-center py-4">Loading alerts…</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ STATIONS TAB ════════ -->
+        <div id="tab-stations" style="display:none;">
+            <div class="bg-white rounded-2xl shadow-sm" style="border:1px solid #f1f5f9; overflow:hidden;">
+                <div class="flex items-center justify-between px-6 py-4" style="border-bottom:1px solid #f1f5f9;">
+                    <div>
+                        <div class="section-head mb-0">Sampling Stations</div>
+                        <p class="text-xs text-gray-400" id="station-count-label">Loading…</p>
+                    </div>
+                    <div class="flex gap-2">
+                        <input id="station-search" type="text" placeholder="Search stations…"
+                               class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                               style="focus:ring-color:#0891b2; width:220px;"
+                               oninput="WQ.filterStations(this.value)">
+                        <button onclick="WQ.openStationModal()"
+                                class="flex items-center gap-1.5 px-3 py-2 text-xs font-semibold text-white rounded-lg transition-all"
+                                style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                            <i class="fas fa-plus"></i> Add
+                        </button>
+                    </div>
+                </div>
+                <div class="overflow-x-auto">
+                    <table class="w-full">
+                        <thead>
+                            <tr style="background:#f8fafc;">
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Code</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Name</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Coordinates</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Readings</th>
+                                <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Status</th>
+                                <th class="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="station-table-body">
+                            <tr>
+                                <td colspan="6" class="text-center py-10 text-gray-400 text-sm">
+                                    <i class="fas fa-spinner fa-spin mr-2"></i>Loading stations…
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ ANALYSIS TAB ════════ -->
+        <div id="tab-analysis" style="display:none;">
+            <!-- Filters -->
+            <div class="bg-white rounded-xl shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-end" style="border:1px solid #f1f5f9;">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Station</label>
+                    <select id="analysis-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" onchange="WQ.loadAnalysis()">
+                        <option value="">All stations</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Date From</label>
+                    <input type="date" id="analysis-from" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadAnalysis()">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Date To</label>
+                    <input type="date" id="analysis-to" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadAnalysis()">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Indicator (Trend)</label>
+                    <select id="analysis-indicator" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadTrend()">
+                        <option value="EC">Electrical Conductivity</option>
+                        <option value="PH">pH</option>
+                        <option value="TDS">Total Dissolved Solids</option>
+                        <option value="TURB">Turbidity</option>
+                        <option value="CL">Chloride</option>
+                        <option value="NO3">Nitrate</option>
+                        <option value="DO">Dissolved Oxygen</option>
+                    </select>
+                </div>
+                <button onclick="WQ.loadAnalysis(); WQ.loadTrend();"
+                        class="px-4 py-2 text-sm font-semibold text-white rounded-lg"
+                        style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                    <i class="fas fa-sync-alt mr-1"></i> Refresh
+                </button>
+            </div>
+
+            <div class="grid grid-cols-2 gap-5 mb-5">
+                <!-- Trend area chart -->
+                <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                    <div class="section-head mb-1">Indicator Trend</div>
+                    <p class="text-xs text-gray-400 mb-4" id="trend-subtitle">Select an indicator above</p>
+                    <canvas id="chart-indicator-trend" height="140"></canvas>
+                </div>
+
+                <!-- Radar snapshot -->
+                <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                    <div class="section-head mb-1">Latest Reading Snapshot</div>
+                    <p class="text-xs text-gray-400 mb-4">Normalised % of upper standard limit</p>
+                    <canvas id="chart-radar" height="140"></canvas>
+                </div>
+            </div>
+
+            <!-- Compliance matrix -->
+            <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                <div class="flex items-center justify-between mb-4">
+                    <div>
+                        <div class="section-head mb-0">Compliance Matrix</div>
+                        <p class="text-xs text-gray-400">Each cell = one reading event. Teal = compliant · Red = violation</p>
+                    </div>
+                    <div class="flex gap-2 text-xs">
+                        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md" style="background:#ccfbf1;color:#0f766e;">
+                            <span class="w-3 h-3 rounded bg-teal-500 inline-block"></span>Compliant
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md" style="background:#ffe4e6;color:#be123c;">
+                            <span class="w-3 h-3 rounded bg-rose-500 inline-block"></span>Violation
+                        </span>
+                        <span class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md" style="background:#f1f5f9;color:#64748b;">
+                            <span class="w-3 h-3 rounded bg-gray-300 inline-block"></span>No data
+                        </span>
+                    </div>
+                </div>
+                <div class="matrix-wrap" id="compliance-matrix-wrap">
+                    <p class="text-center text-gray-400 text-sm py-8">Loading matrix…</p>
+                </div>
+            </div>
+
+            <!-- Reading history table -->
+            <div class="bg-white rounded-2xl shadow-sm mt-5" style="border:1px solid #f1f5f9;overflow:hidden;">
+                <div class="flex items-center justify-between px-6 py-4" style="border-bottom:1px solid #f1f5f9;">
+                    <div class="section-head mb-0">Reading Events</div>
+                    <div class="flex gap-2">
+                        <button id="readings-prev" onclick="WQ.readingsPage(-1)"
+                                class="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50">← Prev</button>
+                        <span id="readings-page-label" class="text-xs text-gray-500 self-center px-2">Page 1</span>
+                        <button id="readings-next" onclick="WQ.readingsPage(1)"
+                                class="px-3 py-1.5 text-xs border border-gray-200 rounded-lg hover:bg-gray-50">Next →</button>
+                    </div>
+                </div>
+                <table class="w-full">
+                    <thead style="background:#f8fafc;">
+                        <tr>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Date</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Station</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Measurements</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Violations</th>
+                            <th class="px-5 py-3 text-left text-xs font-semibold text-gray-500 uppercase tracking-wider">Source File</th>
+                            <th class="px-5 py-3 text-right text-xs font-semibold text-gray-500 uppercase tracking-wider">Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="readings-table-body">
+                        <tr>
+                            <td colspan="6" class="text-center py-10 text-gray-400 text-sm">
+                                <i class="fas fa-spinner fa-spin mr-2"></i>Loading readings…
+                            </td>
+                        </tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
+        <!-- ════════ UPLOAD TAB ════════ -->
+        <div id="tab-upload" style="display:none;">
+            <div class="grid grid-cols-2 gap-6">
+                <!-- Upload form -->
+                <div>
+                    <div class="bg-white rounded-2xl shadow-sm p-6" style="border:1px solid #f1f5f9;">
+                        <div class="section-head mb-1">Upload Readings</div>
+                        <p class="text-xs text-gray-400 mb-5">Upload a filled Excel file to add water quality readings to the system.</p>
+
+                        <div class="upload-zone mb-4" id="wq-upload-zone"
+                             ondragover="event.preventDefault(); this.classList.add('dragover')"
+                             ondragleave="this.classList.remove('dragover')"
+                             ondrop="WQ.handleDrop(event)"
+                             onclick="document.getElementById('wq-file-input').click()">
+                            <i class="fas fa-file-excel text-4xl mb-3" style="color:#0d9488;"></i>
+                            <p class="text-sm font-semibold text-gray-700">Drag &amp; drop your Excel file here</p>
+                            <p class="text-xs text-gray-400 mt-1">or click to browse · .xlsx only</p>
+                        </div>
+                        <input type="file" id="wq-file-input" accept=".xlsx,.xls" class="hidden"
+                               onchange="WQ.handleFileSelect(this)">
+
+                        <button onclick="WQ.submitUpload()"
+                                class="w-full py-3 text-sm font-semibold text-white rounded-xl transition-all mt-2"
+                                style="background:linear-gradient(135deg,#0891b2,#0d9488);"
+                                id="wq-upload-btn" disabled>
+                            <i class="fas fa-upload mr-2"></i>Upload File
+                        </button>
+
+                        <div id="wq-upload-result" class="mt-4 hidden"></div>
+                    </div>
+                </div>
+
+                <!-- Template download -->
+                <div>
+                    <div class="bg-white rounded-2xl shadow-sm p-6 mb-4" style="border:1px solid #f1f5f9;">
+                        <div class="section-head mb-1">Download Template</div>
+                        <p class="text-xs text-gray-400 mb-5">Use this template to prepare your data before uploading. All 15 indicators are pre-configured with correct headers.</p>
+                        <button onclick="WQ.downloadTemplate()"
+                                class="w-full flex items-center justify-center gap-2 py-3 text-sm font-semibold rounded-xl
+                                       border-2 transition-all"
+                                style="border-color:#0891b2;color:#0891b2;"
+                                onmouseover="this.style.background='#ecfeff'"
+                                onmouseout="this.style.background=''">
+                            <i class="fas fa-file-download text-lg"></i>
+                            water_quality_upload_template.xlsx
+                        </button>
+                    </div>
+
+                    <!-- Format guide -->
+                    <div class="bg-white rounded-2xl shadow-sm p-6" style="border:1px solid #f1f5f9;">
+                        <div class="section-head mb-3">File Format Guide</div>
+                        <ul class="space-y-2 text-xs text-gray-600">
+                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>First row must be the header row (use the template)</span></li>
+                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span><b>Reading Date</b> column: YYYY-MM-DD format</span></li>
+                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span><b>Station Name</b> must match an existing station exactly</span></li>
+                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>Blank cells are accepted — indicator will be recorded as not measured</span></li>
+                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>Compliance is auto-calculated against SANS 241:2015 standards</span></li>
+                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>Re-uploading the same station + date updates existing measurements</span></li>
+                        </ul>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ ANALYTICS TAB ════════ -->
+        <div id="tab-analytics" style="display:none;">
+
+            <!-- Analytics filter bar -->
+            <div class="bg-white rounded-xl shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-end" style="border:1px solid #f1f5f9;">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Station</label>
+                    <select id="ana-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                        <option value="">Select station…</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Date From</label>
+                    <input type="date" id="ana-from" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Date To</label>
+                    <input type="date" id="ana-to" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Indicator (MK / Load)</label>
+                    <select id="ana-indicator" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                        <option value="EC">EC</option>
+                        <option value="PH">pH</option>
+                        <option value="TDS">TDS</option>
+                        <option value="NO3">Nitrate</option>
+                        <option value="SO4">Sulphate</option>
+                        <option value="FE">Iron</option>
+                    </select>
+                </div>
+                <button onclick="WQ.loadAnalytics()"
+                        class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition-all"
+                        style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                    <i class="fas fa-flask mr-1"></i> Run Analysis
+                </button>
+            </div>
+
+            <!-- Row 1: WQI + Blue Drop -->
+            <div class="grid grid-cols-3 gap-4 mb-5">
+                <!-- CCME-WQI card -->
+                <div class="analytic-card col-span-2">
+                    <div class="a-head">CCME Water Quality Index</div>
+                    <div class="flex items-center gap-8" id="wqi-panel">
+                        <div>
+                            <svg class="wqi-gauge" viewBox="0 0 160 90" id="wqi-gauge-svg">
+                                <defs>
+                                    <linearGradient id="wqi-grad" x1="0" y1="0" x2="1" y2="0">
+                                        <stop offset="0%" stop-color="#ef4444"/>
+                                        <stop offset="50%" stop-color="#f59e0b"/>
+                                        <stop offset="100%" stop-color="#14b8a6"/>
+                                    </linearGradient>
+                                </defs>
+                                <path d="M 15 75 A 65 65 0 0 1 145 75" fill="none" stroke="#e2e8f0" stroke-width="14" stroke-linecap="round"/>
+                                <path id="wqi-arc" d="M 15 75 A 65 65 0 0 1 145 75" fill="none" stroke="url(#wqi-grad)" stroke-width="14" stroke-linecap="round" stroke-dasharray="204" stroke-dashoffset="204"/>
+                                <text id="wqi-gauge-score" x="80" y="68" text-anchor="middle" font-size="26" font-weight="900" fill="#0f172a">—</text>
+                                <text id="wqi-gauge-cat" x="80" y="84" text-anchor="middle" font-size="9" fill="#64748b">No data</text>
+                            </svg>
+                        </div>
+                        <div class="flex-1 grid grid-cols-3 gap-3" id="wqi-metrics">
+                            <div class="text-center p-3 rounded-xl" style="background:#f8fafc;">
+                                <div class="text-xs text-gray-400 mb-1">F1 (Scope)</div>
+                                <div class="text-lg font-bold text-gray-800" id="wqi-f1">—</div>
+                                <div class="text-xs text-gray-400">% vars failing</div>
+                            </div>
+                            <div class="text-center p-3 rounded-xl" style="background:#f8fafc;">
+                                <div class="text-xs text-gray-400 mb-1">F2 (Frequency)</div>
+                                <div class="text-lg font-bold text-gray-800" id="wqi-f2">—</div>
+                                <div class="text-xs text-gray-400">% tests failing</div>
+                            </div>
+                            <div class="text-center p-3 rounded-xl" style="background:#f8fafc;">
+                                <div class="text-xs text-gray-400 mb-1">F3 (Amplitude)</div>
+                                <div class="text-lg font-bold text-gray-800" id="wqi-f3">—</div>
+                                <div class="text-xs text-gray-400">exceedance</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="mt-3 text-xs text-gray-400" id="wqi-detail">Select a station and click Run Analysis.</div>
+                </div>
+
+                <!-- Blue Drop card -->
+                <div class="analytic-card">
+                    <div class="a-head">Blue Drop Score</div>
+                    <div class="flex flex-col items-center gap-2 py-2" id="bd-panel">
+                        <svg class="bd-ring" viewBox="0 0 90 90">
+                            <circle cx="45" cy="45" r="38" fill="none" stroke="#e2e8f0" stroke-width="9"/>
+                            <circle id="bd-ring-fill" cx="45" cy="45" r="38" fill="none" stroke="#0891b2" stroke-width="9"
+                                    stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"
+                                    transform="rotate(-90 45 45)"/>
+                            <text x="45" y="48" text-anchor="middle" font-size="14" font-weight="900" fill="#0f172a" id="bd-score-txt">—</text>
+                        </svg>
+                        <div class="text-sm font-bold text-center" id="bd-grade">No data</div>
+                        <div class="text-xs text-gray-400 text-center" id="bd-sub">Run analysis to compute</div>
+                    </div>
+                    <div class="mt-2 text-xs space-y-1" id="bd-breakdown"></div>
+                </div>
+            </div>
+
+            <!-- Row 2: Mann-Kendall + LSI -->
+            <div class="grid grid-cols-2 gap-4 mb-5">
+                <!-- Mann-Kendall -->
+                <div class="analytic-card">
+                    <div class="a-head">Mann-Kendall Trend Test</div>
+                    <div id="mk-panel">
+                        <p class="text-gray-400 text-xs text-center py-6">Run analysis to compute trend.</p>
+                    </div>
+                </div>
+
+                <!-- LSI / RSI -->
+                <div class="analytic-card">
+                    <div class="a-head">Langelier & Ryznar Stability Indices</div>
+                    <div id="lsi-panel">
+                        <p class="text-gray-400 text-xs text-center py-6">Run analysis to compute stability indices.</p>
+                    </div>
+                    <canvas id="chart-lsi-trend" height="90" class="mt-3"></canvas>
+                </div>
+            </div>
+
+            <!-- Row 3: Piper diagram -->
+            <div class="analytic-card mb-5">
+                <div class="a-head">Piper Diagram — Major Ion Chemistry</div>
+                <p class="text-xs text-gray-400 mb-3">Each point = one reading event. The central diamond shows overall hydrochemical character.</p>
+                <div class="piper-svg-container" id="piper-svg-wrap">
+                    <p class="text-center text-gray-400 text-sm py-8">Run analysis to render Piper diagram.</p>
+                </div>
+            </div>
+
+            <!-- Row 4: Stiff diagrams -->
+            <div class="analytic-card mb-5">
+                <div class="a-head">Stiff Diagrams — Hydrochemical Fingerprints</div>
+                <p class="text-xs text-gray-400 mb-3">Each polygon represents a reading event's major ion pattern.</p>
+                <div class="stiff-svg-row flex flex-wrap gap-6" id="stiff-svg-wrap">
+                    <p class="text-center text-gray-400 text-sm py-4">Run analysis to render Stiff diagrams.</p>
+                </div>
+            </div>
+
+            <!-- Row 5: Eutrophication + AMD -->
+            <div class="grid grid-cols-2 gap-4 mb-5">
+                <!-- Eutrophication / TSI -->
+                <div class="analytic-card">
+                    <div class="a-head">Trophic State Index (Carlson)</div>
+                    <div id="tsi-panel">
+                        <p class="text-gray-400 text-xs text-center py-6">Requires TP, Chlorophyll-a, or Secchi depth readings.</p>
+                    </div>
+                </div>
+
+                <!-- AMD Assessment -->
+                <div class="analytic-card">
+                    <div class="a-head">Acid Mine Drainage Assessment</div>
+                    <div id="amd-panel">
+                        <p class="text-gray-400 text-xs text-center py-6">Run analysis to assess AMD indicators.</p>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Row 6: Seasonal + Pollution load -->
+            <div class="grid grid-cols-2 gap-4 mb-5">
+                <!-- Seasonal comparison -->
+                <div class="analytic-card">
+                    <div class="a-head">Seasonal Comparison (Wet vs Dry)</div>
+                    <div id="seasonal-panel">
+                        <p class="text-gray-400 text-xs text-center py-6">Run analysis to compare Wet / Dry season means.</p>
+                    </div>
+                </div>
+
+                <!-- Pollution load -->
+                <div class="analytic-card">
+                    <div class="a-head">Pollution Load (kg/day)</div>
+                    <p class="text-xs text-gray-400 mb-3">Requires flow rate on each reading. Load = Concentration × Flow × 86.4</p>
+                    <canvas id="chart-load-trend" height="110"></canvas>
+                    <div id="load-panel" class="mt-2"></div>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- ════════ ALERTS TAB ════════ -->
+        <div id="tab-alerts" style="display:none;">
+            <div class="grid grid-cols-2 gap-5">
+                <!-- Create alert config -->
+                <div class="bg-white rounded-2xl shadow-sm p-6" style="border:1px solid #f1f5f9;">
+                    <div class="section-head mb-1">Create Alert Rule</div>
+                    <p class="text-xs text-gray-400 mb-5">Get notified by email or WhatsApp when a parameter breaches its threshold.</p>
+                    <div class="space-y-4">
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Indicator <span class="text-red-500">*</span></label>
+                            <select id="alert-indicator-sel" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                <option value="">Select indicator…</option>
+                            </select>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Station (optional)</label>
+                            <select id="alert-station-sel" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                <option value="">All stations</option>
+                            </select>
+                        </div>
+                        <div class="grid grid-cols-2 gap-3">
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1">Threshold Type</label>
+                                <select id="alert-type-sel" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                                    <option value="ABOVE">ABOVE</option>
+                                    <option value="BELOW">BELOW</option>
+                                    <option value="HEALTH">HEALTH limit</option>
+                                </select>
+                            </div>
+                            <div>
+                                <label class="block text-xs font-semibold text-gray-600 mb-1">Threshold Value</label>
+                                <input type="number" id="alert-threshold" step="any"
+                                       class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm"
+                                       placeholder="e.g. 70">
+                            </div>
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">Alert Email</label>
+                            <input type="email" id="alert-email" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="analyst@org.co.za">
+                        </div>
+                        <div>
+                            <label class="block text-xs font-semibold text-gray-600 mb-1">WhatsApp Number</label>
+                            <input type="text" id="alert-whatsapp" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="+27821234567">
+                        </div>
+                        <button onclick="WQ.createAlertConfig()"
+                                class="w-full py-2.5 text-sm font-semibold text-white rounded-xl transition-all"
+                                style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                            <i class="fas fa-bell mr-1"></i> Save Alert Rule
+                        </button>
+                        <div id="alert-config-msg" class="hidden text-xs font-semibold"></div>
+                    </div>
+                </div>
+
+                <!-- Active alert rules -->
+                <div>
+                    <div class="bg-white rounded-2xl shadow-sm p-5 mb-4" style="border:1px solid #f1f5f9;">
+                        <div class="section-head mb-3">Active Alert Rules</div>
+                        <div id="alert-config-list">
+                            <p class="text-gray-400 text-xs text-center py-4">Loading…</p>
+                        </div>
+                    </div>
+
+                    <!-- Alert log -->
+                    <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                        <div class="section-head mb-3">Dispatch Log</div>
+                        <div id="alert-log-list">
+                            <p class="text-gray-400 text-xs text-center py-4">Loading…</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+    </div><!-- /padding wrapper -->
+</div>
+
+<!-- ─── Tooltip ──────────────────────────────────────────────────────────── -->
+<div class="wq-tooltip" id="wq-tooltip"></div>
+
+<!-- ─── Station Modal ─────────────────────────────────────────────────────── -->
+<div id="station-modal" class="wq-modal-backdrop" style="display:none;">
+    <div class="wq-modal">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-base font-bold text-gray-900" id="station-modal-title">Add Station</h3>
+            <button onclick="WQ.closeStationModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
+        <form id="station-form" onsubmit="WQ.saveStation(event)">
+            <input type="hidden" id="station-edit-id">
+            <div class="space-y-4">
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Station Code <span class="text-red-500">*</span></label>
+                        <input type="text" id="station-code" maxlength="20"
+                               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                               placeholder="e.g. WQ-001" required>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Station Name <span class="text-red-500">*</span></label>
+                        <input type="text" id="station-name" maxlength="150"
+                               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                               placeholder="e.g. Komati River North" required>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Description</label>
+                    <textarea id="station-desc" rows="2"
+                              class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2"
+                              placeholder="Optional description…"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Latitude</label>
+                        <input type="number" id="station-lat" step="0.0000001" min="-90" max="90"
+                               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                               placeholder="-25.7469">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Longitude</label>
+                        <input type="number" id="station-lng" step="0.0000001" min="-180" max="180"
+                               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                               placeholder="28.1871">
+                    </div>
+                </div>
+                <div id="station-active-row" style="display:none;">
+                    <label class="flex items-center gap-2 text-sm text-gray-700 cursor-pointer">
+                        <input type="checkbox" id="station-active" class="rounded">
+                        Station is active
+                    </label>
+                </div>
+            </div>
+            <div class="flex gap-3 mt-6">
+                <button type="button" onclick="WQ.closeStationModal()"
+                        class="flex-1 py-2.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-all">
+                    Cancel
+                </button>
+                <button type="submit"
+                        class="flex-1 py-2.5 text-sm font-semibold text-white rounded-xl transition-all"
+                        style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                    <i class="fas fa-save mr-1"></i> Save Station
+                </button>
+            </div>
+        </form>
+    </div>
+</div>
+
+<!-- ─── Reading Detail Modal ──────────────────────────────────────────────── -->
+<div id="reading-detail-modal" class="wq-modal-backdrop" style="display:none;">
+    <div class="wq-modal" style="max-width:640px;">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-base font-bold text-gray-900" id="reading-modal-title">Reading Detail</h3>
+            <button onclick="document.getElementById('reading-detail-modal').style.display='none'"
+                    class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
+        <div id="reading-detail-body">
+            <p class="text-center text-gray-400 py-8"><i class="fas fa-spinner fa-spin mr-2"></i>Loading…</p>
+        </div>
+    </div>
+</div>
+
+<!-- ─── Logout confirm ──────────────────────────────────────────────────── -->
+<div id="logoutModal" class="fixed inset-0 bg-black bg-opacity-50 hidden z-50 flex items-center justify-center">
+    <div class="bg-white rounded-2xl p-8 max-w-sm w-full mx-4 text-center shadow-2xl">
+        <div class="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <i class="fas fa-sign-out-alt text-red-500 text-2xl"></i>
+        </div>
+        <h3 class="text-lg font-bold text-gray-900 mb-2">Sign Out</h3>
+        <p class="text-gray-500 text-sm mb-6">Are you sure you want to sign out of HydroCore?</p>
+        <div class="flex gap-3">
+            <button onclick="document.getElementById('logoutModal').classList.add('hidden')"
+                    class="flex-1 py-2.5 border border-gray-200 rounded-xl text-sm font-semibold text-gray-700 hover:bg-gray-50">Cancel</button>
+            <button onclick="performLogout()"
+                    class="flex-1 py-2.5 bg-red-500 hover:bg-red-600 rounded-xl text-sm font-semibold text-white">Sign Out</button>
+        </div>
+    </div>
+</div>
+
+<script>
+function confirmLogout() { document.getElementById('logoutModal').classList.remove('hidden'); }
+function performLogout() {
+    localStorage.clear(); sessionStorage.clear();
+    window.location.href = '/frontend/public/login.html';
+}
+</script>
+<script src="/frontend/src/water_quality.js"></script>
+</body>
+</html>

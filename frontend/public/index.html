@@ -6,6 +6,7 @@
     <title>HydroCore</title>
     <!-- Auth guard: hide body until authentication is confirmed -->
     <style>body { display: none; }</style>
+    <script src="/frontend/src/config.js"></script>
     <script src="/frontend/src/auth.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
@@ -447,17 +448,17 @@
         
         <!-- Navigation -->
         <nav class="mt-6 overflow-y-auto flex-1 pb-4 px-3">
+            <p class="px-4 mt-2 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Hydrology</p>
             <div class="space-y-1">
                 <a href="#dashboard" class="nav-item active flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-white">
                     <i class="nav-icon fas fa-th-large mr-3 w-5 text-center"></i>
                     <span>Dashboard</span>
                 </a>
-                
                 <a href="/frontend/public/Reports.html" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
                     <i class="nav-icon fas fa-file-alt mr-3 w-5 text-center"></i>
                     <span>Reports</span>
                 </a>
-                 <a href="/frontend/public/analysis_page.html" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                <a href="/frontend/public/analysis_page.html" class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
                     <i class="nav-icon fas fa-chart-line mr-3 w-5 text-center"></i>
                     <span>Failure Analysis</span>
                 </a>
@@ -466,6 +467,21 @@
                     <i class="nav-icon fas fa-cloud-upload-alt mr-3 w-5 text-center"></i>
                     <span>Data Source Upload</span>
                 </a>
+            </div>
+
+            <div class="nav-divider"></div>
+            <p class="px-4 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Water Quality</p>
+            <div class="space-y-1">
+                <a href="/frontend/public/water_quality.html"
+                   class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white">
+                    <i class="nav-icon fas fa-vial mr-3 w-5 text-center"></i>
+                    <span>Water Quality</span>
+                </a>
+            </div>
+
+            <div class="nav-divider"></div>
+            <p class="px-4 mb-1 text-xs font-semibold uppercase tracking-widest" style="color:rgba(255,255,255,0.4);">Administration</p>
+            <div class="space-y-1">
                 <a href="/frontend/public/manage_users.html" data-show-for-role="admin"
                    class="nav-item flex items-center px-4 py-3.5 text-sm font-medium rounded-xl text-gray-300 hover:text-white"
                    style="display:none">

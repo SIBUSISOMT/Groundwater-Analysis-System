@@ -4,6 +4,7 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>HydroCore — Sign In</title>
+    <script src="/frontend/src/config.js"></script>
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     <style>
@@ -371,10 +372,8 @@
     </div>
 
     <script>
-    // ── Backend URL — works whether served from Flask (5000) or Live Server ────
-    const _BACKEND = (window.location.port === '5000' || window.location.port === '')
-        ? ''
-        : 'http://localhost:5000';
+    // Backend URL comes from config.js (window.HC_BACKEND_URL), loaded above.
+    const _BACKEND = window.HC_BACKEND_URL;
     const API = (url, opts = {}) =>
         fetch(`${_BACKEND}${url}`, { credentials: _BACKEND ? 'include' : 'same-origin', ...opts });
 

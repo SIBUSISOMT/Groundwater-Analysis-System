@@ -373,7 +373,7 @@ BEGIN
                 WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
                 WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow
                 WHEN LOWER(rd.category) = 'gwlevel' THEN rd.standardized_gw_level
-            END > 0.5 THEN -1
+            END > 0.5 THEN 0
             WHEN CASE 
                 WHEN LOWER(rd.category) = 'recharge' THEN rd.drought_index_recharge
                 WHEN LOWER(rd.category) = 'baseflow' THEN rd.standardized_baseflow

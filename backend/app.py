@@ -13,8 +13,7 @@ import pyodbc
 from flask import Flask, g, jsonify, request, send_file, send_from_directory, redirect
 from werkzeug.utils import secure_filename
 from flask_cors import CORS
-from flask_limiter import Limiter
-from flask_limiter.util import get_remote_address
+from extensions import limiter
 
 
 app = Flask(__name__)
@@ -31,7 +30,7 @@ CORS(app, origins=_allowed_origins, supports_credentials=True)
 app.config['MAX_CONTENT_LENGTH'] = 100 * 1024 * 1024  # 100MB max
 
 # ── Rate limiter ───────────────────────────────────────────────────────────────
-limiter = Limiter(key_func=get_remote_address, app=app, default_limits=[])
+limiter.init_app(app)
 
 # Configure logging
 logging.basicConfig(
@@ -307,6 +306,49 @@ DB_CONFIG = {
 
 db = Database(**DB_CONFIG)
 
+
+def _verify_tenant_isolation_schema():
+    """
+    Startup check: confirm org_id columns exist on every tenant-scoped table.
+    If they're missing, _exec() below silently falls back to running reads
+    unscoped across ALL organizations with no per-request error (see its
+    docstring) — that's a deliberate backward-compat shim for mid-migration
+    deployments, but it must not go unnoticed. Logs CRITICAL always, and
+    refuses to start in production so this can't fail silently in the field.
+    """
+    required = {
+        'Users': 'org_id',
+        'DataSources': 'org_id',
+        'RawData': 'org_id',
+        'ProcessedData': 'org_id',
+    }
+    missing = []
+    for table, col in required.items():
+        try:
+            rows = db.execute_query(
+                "SELECT 1 FROM INFORMATION_SCHEMA.COLUMNS "
+                "WHERE TABLE_SCHEMA = 'dbo' AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+                (table, col),
+            )
+        except Exception as exc:
+            logger.critical(f"Tenant-isolation schema check could not run: {exc}")
+            return
+        if not rows:
+            missing.append(f"{table}.{col}")
+
+    if missing:
+        msg = (
+            "TENANT ISOLATION MIGRATION NOT APPLIED — missing columns: "
+            f"{', '.join(missing)}. Reads will run UNSCOPED ACROSS ALL "
+            "ORGANIZATIONS until database/isolation_migration.sql is run."
+        )
+        logger.critical(msg)
+        if os.getenv('FLASK_ENV', 'development') == 'production':
+            raise RuntimeError(msg)
+
+
+_verify_tenant_isolation_schema()
+
 import re as _re
 
 def _exec(query, params=None, **kw):
@@ -333,7 +375,7 @@ def _exec(query, params=None, **kw):
             q = _re.sub(r',?\s*ISNULL\(\w+\.username\s*,\s*\'system\'\)\s+as\s+uploaded_by_username', '', q, flags=_re.IGNORECASE)
             # Remove the org_id param (always first in params)
             p = list(params)[1:] if params else None
-            logger.warning("Tenant migration pending — running without org_id/uploaded_by filter")
+            logger.critical("Tenant migration pending — running query UNSCOPED across all organizations")
             return db.execute_query(q, p if p else None, **kw)
         raise
 
@@ -346,6 +388,11 @@ app.register_blueprint(auth_bp)
 from admin_bp import admin_bp as _admin_bp, init_admin as _init_admin
 _init_admin(db)
 app.register_blueprint(_admin_bp)
+
+# ── Water Quality blueprint ────────────────────────────────────────────────────
+from wq_bp import wq_bp as _wq_bp, init_wq as _init_wq
+_init_wq(db)
+app.register_blueprint(_wq_bp)
 
 # ── Serve frontend static files from Flask (same origin as API) ───────────────
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'frontend')
@@ -1697,12 +1744,12 @@ def get_failure_analysis():
 
         query += " GROUP BY c.catchment_name, pd.parameter_type ORDER BY failure_rate DESC"
         
-        print(f"[DEBUG] Query: {query}")
-        print(f"[DEBUG] Params: {params}")
-        
+        logger.debug(f"[QUERY] {query}")
+        logger.debug(f"[PARAMS] {params}")
+
         results = _exec(query, params if params else None)
 
-        print(f"[DEBUG] Results count: {len(results) if results else 0}")
+        logger.debug(f"[RESULTS] count: {len(results) if results else 0}")
         
         analysis = []
         if results:
@@ -2247,10 +2294,14 @@ def debug_baseflow_check():
     """Debug endpoint to verify baseflow data"""
     try:
         source_id = request.args.get('source_id', type=int)
-        
+
         if not source_id:
             return jsonify({'error': 'source_id required'}), 400
-        
+
+        err = _check_source_access(source_id)
+        if err:
+            return err
+
         query = """
         SELECT COUNT(*) as total, 
                SUM(CASE WHEN baseflow_value IS NOT NULL THEN 1 ELSE 0 END) as with_values,
@@ -2275,6 +2326,500 @@ def debug_baseflow_check():
     except Exception as e:
         logger.error(f"Debug error: {e}")
         return jsonify({'error': str(e)}), 500
+
+
+# ============================================================================
+# UPLOAD TEMPLATES
+# ============================================================================
+
+CATCHMENTS = ['Assegai', 'Crocodile', 'Lower Komati', 'Ngwempisi', 'Sabie', 'Sand', 'Upper Komati']
+
+TEMPLATE_COLUMNS = {
+    'recharge': ['measurement date', 'recharge (inches)', 'average recharge', 'stdev', 'drought index - recharge', 'recharge deviation'],
+    'baseflow': ['measurement date', 'baseflow value', 'average baseflow', 'stdev', 'standardized baseflow', 'baseflow deviation'],
+    'gwlevel':  ['measurement date', 'gw level', 'average gw level', 'stdev', 'standardized gw level', 'gw level deviation'],
+}
+
+_SAMPLE_ROWS = {
+    'recharge': [
+        ['2020-01-01', 3.2, 2.8, 0.7,  0.57,  0.4],
+        ['2020-02-01', 1.5, 2.8, 0.7, -1.86, -1.3],
+        ['2020-03-01', 2.9, 2.8, 0.7,  0.14,  0.1],
+    ],
+    'baseflow': [
+        ['2020-01-01', 12.4, 10.5, 2.1,  0.90,  1.9],
+        ['2020-02-01',  8.7, 10.5, 2.1, -0.86, -1.8],
+        ['2020-03-01', 11.2, 10.5, 2.1,  0.33,  0.7],
+    ],
+    'gwlevel':  [
+        ['2020-01-01', 15.3, 14.8, 1.2,  0.42,  0.5],
+        ['2020-02-01', 12.1, 14.8, 1.2, -2.25, -2.7],
+        ['2020-03-01', 14.5, 14.8, 1.2, -0.25, -0.3],
+    ],
+}
+
+
+def _style_header_row(ws, row, cols, fill_hex, col_offset=0):
+    from openpyxl.styles import Font, PatternFill, Alignment
+    from openpyxl.utils import get_column_letter
+    fill = PatternFill('solid', fgColor=fill_hex)
+    font = Font(color='FFFFFF', bold=True)
+    for ci, col_name in enumerate(cols):
+        cell = ws.cell(row=row, column=col_offset + ci + 1, value=col_name)
+        cell.fill = fill
+        cell.font = font
+        cell.alignment = Alignment(horizontal='center')
+        ws.column_dimensions[get_column_letter(col_offset + ci + 1)].width = max(len(col_name) + 4, 18)
+
+
+def _write_single_sheet(ws, category, catchment_label=None):
+    """Write headers + 3 sample rows for a single-category sheet."""
+    from openpyxl.styles import Font
+    row = 1
+    if catchment_label:
+        ws.cell(row=1, column=1, value=catchment_label).font = Font(bold=True, size=12)
+        row = 2
+    cols = TEMPLATE_COLUMNS[category]
+    _style_header_row(ws, row, cols, '1F4E79')
+    for ri, data_row in enumerate(_SAMPLE_ROWS[category], start=row + 1):
+        for ci, val in enumerate(data_row):
+            ws.cell(row=ri, column=ci + 1, value=val)
+
+
+def _write_bulk_sheet(ws, catchment_label):
+    """Write a 3-section bulk sheet (Recharge | Baseflow | GW Level)."""
+    from openpyxl.styles import Font
+    sect_colors = {'recharge': '2E75B6', 'baseflow': '70AD47', 'gwlevel': '7030A0'}
+    ws.cell(row=1, column=1, value=catchment_label).font = Font(bold=True, size=12)
+    col_offset = 0
+    for cat in ('recharge', 'baseflow', 'gwlevel'):
+        cols = TEMPLATE_COLUMNS[cat]
+        ws.cell(row=2, column=col_offset + 1, value=cat.upper()).font = Font(bold=True)
+        _style_header_row(ws, 3, cols, sect_colors[cat], col_offset=col_offset)
+        for ri, data_row in enumerate(_SAMPLE_ROWS[cat], start=4):
+            for ci, val in enumerate(data_row):
+                ws.cell(row=ri, column=col_offset + ci + 1, value=val)
+        col_offset += len(cols) + 1  # blank separator column
+
+
+@app.route('/api/sources/<int:source_id>/download', methods=['GET'])
+@require_auth()
+def download_source_data(source_id):
+    """Export a previously-uploaded data source back as an Excel file.
+
+    Reconstructs the file from RawData using the same column layout as the
+    upload templates so the file can be edited and re-uploaded.
+    """
+    import io
+    from openpyxl import Workbook
+    from collections import defaultdict
+
+    err = _check_source_access(source_id)
+    if err:
+        return err
+
+    meta = _exec(
+        "SELECT file_name, category, subcatchment_name FROM dbo.DataSources WHERE source_id = ?",
+        (source_id,),
+    )
+    if not meta:
+        return jsonify({'success': False, 'error': 'Source not found'}), 404
+
+    file_name, category, subcatchment = meta[0]
+    cat = (category or '').strip().lower()
+
+    rows = _exec("""
+        SELECT
+            rd.measurement_date,
+            rd.recharge_inches,   rd.average_recharge,  rd.recharge_stdev,
+            rd.drought_index_recharge,                   rd.recharge_deviation,
+            rd.baseflow_value,    rd.average_baseflow,   rd.baseflow_stdev,
+            rd.standardized_baseflow,                    rd.baseflow_deviation,
+            rd.gw_level,          rd.average_gw_level,   rd.gw_level_stdev,
+            rd.standardized_gw_level,                    rd.gw_level_deviation,
+            c.catchment_name
+        FROM dbo.RawData rd
+        JOIN dbo.Catchments c ON rd.catchment_id = c.catchment_id
+        WHERE rd.source_id = ?
+        ORDER BY rd.measurement_date ASC
+    """, (source_id,))
+
+    # Indices in the SELECT above
+    _EXTRACT = {
+        'recharge': lambda r: [r[0], r[1],  r[2],  r[3],  r[4],  r[5]],
+        'baseflow': lambda r: [r[0], r[6],  r[7],  r[8],  r[9],  r[10]],
+        'gwlevel':  lambda r: [r[0], r[11], r[12], r[13], r[14], r[15]],
+    }
+    _FILL = {'recharge': '2E75B6', 'baseflow': '70AD47', 'gwlevel': '7030A0'}
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    # Group records by catchment (sheet)
+    sheets = defaultdict(list)
+    for row in (rows or []):
+        sheet_key = row[16] or subcatchment or 'Data'
+        sheets[sheet_key].append(row)
+
+    if not sheets:
+        sheets[subcatchment or 'Data'] = []
+
+    for sheet_name, sheet_rows in sheets.items():
+        ws = wb.create_sheet(title=str(sheet_name)[:31])
+
+        if cat in _EXTRACT:
+            headers  = TEMPLATE_COLUMNS[cat]
+            fill_hex = _FILL.get(cat, '1F4E79')
+            _style_header_row(ws, 1, headers, fill_hex)
+            extractor = _EXTRACT[cat]
+            for ri, row in enumerate(sheet_rows, start=2):
+                for ci, val in enumerate(extractor(row)):
+                    cell = ws.cell(row=ri, column=ci + 1, value=val)
+                    if ci == 0 and val is not None:
+                        try:
+                            cell.number_format = 'YYYY-MM-DD'
+                        except Exception:
+                            pass
+        else:
+            ws.cell(row=1, column=1, value=f'Source {source_id} — {category or "unknown category"}')
+
+    safe_name = secure_filename(file_name or f'source_{source_id}.xlsx')
+    if not safe_name.lower().endswith('.xlsx'):
+        safe_name = safe_name.rsplit('.', 1)[0] + '.xlsx'
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=safe_name,
+    )
+
+
+@app.route('/api/templates', methods=['GET'])
+@require_auth()
+def download_template():
+    """Generate a downloadable Excel data-entry template.
+
+    ?type=single     &category=recharge|baseflow|gwlevel  &catchment=<name>
+    ?type=parameter  &category=recharge|baseflow|gwlevel
+    ?type=bulk
+    """
+    import io
+    from openpyxl import Workbook
+
+    tpl_type  = request.args.get('type', 'single').lower()
+    category  = request.args.get('category', '').lower()
+    catchment = request.args.get('catchment', '').strip()
+
+    if tpl_type not in ('single', 'parameter', 'bulk'):
+        return jsonify({'success': False, 'error': 'type must be single, parameter, or bulk'}), 400
+    if tpl_type in ('single', 'parameter') and category not in TEMPLATE_COLUMNS:
+        return jsonify({'success': False, 'error': 'category required (recharge, baseflow, gwlevel)'}), 400
+    if tpl_type == 'single' and not catchment:
+        return jsonify({'success': False, 'error': 'catchment required for single template'}), 400
+    if tpl_type == 'single' and catchment not in CATCHMENTS:
+        return jsonify({'success': False, 'error': f'Unknown catchment. Valid: {", ".join(CATCHMENTS)}'}), 400
+
+    wb = Workbook()
+    wb.remove(wb.active)
+
+    if tpl_type == 'single':
+        ws = wb.create_sheet(title=catchment[:31])
+        _write_single_sheet(ws, category, catchment_label=catchment)
+        filename = f'template_{category}_{catchment.replace(" ", "_")}.xlsx'
+
+    elif tpl_type == 'parameter':
+        for c in CATCHMENTS:
+            ws = wb.create_sheet(title=c[:31])
+            _write_single_sheet(ws, category, catchment_label=c)
+        filename = f'template_{category}_all_catchments.xlsx'
+
+    else:
+        for c in CATCHMENTS:
+            ws = wb.create_sheet(title=c[:31])
+            _write_bulk_sheet(ws, c)
+        filename = 'template_bulk_all_parameters_all_catchments.xlsx'
+
+    buf = io.BytesIO()
+    wb.save(buf)
+    buf.seek(0)
+    return send_file(
+        buf,
+        mimetype='application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        as_attachment=True,
+        download_name=filename,
+    )
+
+
+# ============================================================================
+# BULK UPLOAD
+# ============================================================================
+
+def _safe_float_bulk(v):
+    if v is None or (isinstance(v, float) and pd.isna(v)):
+        return None
+    try:
+        s = str(v).strip()
+        if s.lower() in ('', 'nan', 'null', 'none', '#n/a', 'n/a'):
+            return None
+        return float(s)
+    except (ValueError, TypeError):
+        return None
+
+
+def _extract_category_values(category, row):
+    """Build the category-specific fields dict from a pandas row (with lowercased column names)."""
+    null_recharge = {'recharge_inches': None, 'recharge_converted': None, 'average_recharge': None,
+                     'recharge_stdev': None, 'drought_index_recharge': None, 'recharge_deviation': None}
+    null_baseflow = {'baseflow_value': None, 'average_baseflow': None, 'baseflow_stdev': None,
+                     'standardized_baseflow': None, 'baseflow_deviation': None}
+    null_gwlevel  = {'gw_level': None, 'average_gw_level': None, 'gw_level_stdev': None,
+                     'standardized_gw_level': None, 'gw_level_deviation': None}
+
+    if category == 'baseflow':
+        bv = _safe_float_bulk(row.get('baseflow value'))
+        if bv is None:
+            return None
+        return {**null_recharge, **null_gwlevel,
+                'baseflow_value': bv,
+                'average_baseflow': _safe_float_bulk(row.get('average baseflow')),
+                'baseflow_stdev': _safe_float_bulk(row.get('stdev')),
+                'standardized_baseflow': _safe_float_bulk(row.get('standardized baseflow')),
+                'baseflow_deviation': _safe_float_bulk(row.get('baseflow deviation'))}
+
+    if category == 'gwlevel':
+        gv = _safe_float_bulk(row.get('gw level'))
+        if gv is None:
+            return None
+        return {**null_recharge, **null_baseflow,
+                'gw_level': gv,
+                'average_gw_level': _safe_float_bulk(row.get('average gw level')),
+                'gw_level_stdev': _safe_float_bulk(row.get('stdev')),
+                'standardized_gw_level': _safe_float_bulk(row.get('standardized gw level')),
+                'gw_level_deviation': _safe_float_bulk(row.get('gw level deviation'))}
+
+    if category == 'recharge':
+        rv = _safe_float_bulk(row.get('recharge (inches)'))
+        if rv is None:
+            return None
+        return {**null_baseflow, **null_gwlevel,
+                'recharge_inches': rv,
+                'recharge_converted': _safe_float_bulk(row.get('recharge')),
+                'average_recharge': _safe_float_bulk(row.get('average recharge')),
+                'recharge_stdev': _safe_float_bulk(row.get('stdev')),
+                'drought_index_recharge': _safe_float_bulk(row.get('drought index - recharge')),
+                'recharge_deviation': _safe_float_bulk(row.get('recharge deviation'))}
+
+    return None
+
+
+def _insert_rows_from_df(data_df, category, source_id, catchment_id, catchment_name, org_id):
+    """Insert rows from a DataFrame (already header-stripped, lowercased columns). Returns (inserted, errors)."""
+    inserted = 0
+    errors   = []
+    for idx, row in data_df.iterrows():
+        try:
+            raw_date = row.get('measurement date')
+            if raw_date is None or (isinstance(raw_date, float) and pd.isna(raw_date)) or str(raw_date).strip() == '':
+                continue
+            try:
+                parsed_date = pd.to_datetime(raw_date)
+            except Exception:
+                errors.append(f'Row {idx + 2}: invalid date "{raw_date}"')
+                continue
+
+            cat_vals = _extract_category_values(category, row)
+            if cat_vals is None:
+                continue
+
+            values = {
+                'source_id': source_id,
+                'catchment_id': catchment_id,
+                'measurement_date': parsed_date,
+                'category': category,
+                'original_sheet_name': catchment_name,
+                'org_id': org_id,
+                **cat_vals,
+            }
+            db.insert_raw_data(values)
+            inserted += 1
+        except Exception as exc:
+            errors.append(f'Row {idx + 2}: {exc}')
+    return inserted, errors
+
+
+def _parse_sheet_single_cat(xl_path, sheet_name, category, source_id, catchment_id, catchment_name, org_id):
+    """Parse a single-category sheet (standard 6-column format)."""
+    df = pd.read_excel(xl_path, sheet_name=sheet_name)
+    df.columns = [str(c).strip().lower() for c in df.columns]
+    if 'measurement date' not in df.columns:
+        # Try finding the header somewhere in the first 5 rows
+        df_raw = pd.read_excel(xl_path, sheet_name=sheet_name, header=None)
+        found = False
+        for ridx in range(min(5, len(df_raw))):
+            row_vals = [str(v).strip().lower() for v in df_raw.iloc[ridx]]
+            if 'measurement date' in row_vals:
+                df = df_raw.iloc[ridx:].copy()
+                df.columns = [str(v).strip().lower() for v in df.iloc[0]]
+                df = df.iloc[1:].reset_index(drop=True)
+                found = True
+                break
+        if not found:
+            return 0, ['No "measurement date" column found']
+    return _insert_rows_from_df(df, category, source_id, catchment_id, catchment_name, org_id)
+
+
+def _parse_sheet_bulk_cat(xl_path, sheet_name, category, source_id, catchment_id, catchment_name, org_id):
+    """Parse one category section from a multi-section bulk sheet."""
+    df_raw = pd.read_excel(xl_path, sheet_name=sheet_name, header=None)
+    cat_order = ['recharge', 'baseflow', 'gwlevel']
+    sec_idx   = cat_order.index(category)
+
+    header_row_idx  = None
+    date_col_positions = []
+    for ridx in range(min(6, len(df_raw))):
+        positions = [ci for ci, v in enumerate(df_raw.iloc[ridx])
+                     if str(v).strip().lower() == 'measurement date']
+        if positions:
+            date_col_positions = positions
+            header_row_idx = ridx
+            break
+
+    if not date_col_positions or header_row_idx is None:
+        return 0, ['No "measurement date" header found']
+    if sec_idx >= len(date_col_positions):
+        return 0, [f'Section for {category} not found (only {len(date_col_positions)} section(s) detected)']
+
+    start_col = date_col_positions[sec_idx]
+    section   = df_raw.iloc[header_row_idx:, start_col:start_col + 6].copy()
+    section.columns = [str(v).strip().lower() for v in section.iloc[0]]
+    section   = section.iloc[1:].reset_index(drop=True)
+    return _insert_rows_from_df(section, category, source_id, catchment_id, catchment_name, org_id)
+
+
+@app.route('/api/upload/bulk', methods=['POST'])
+@require_auth(roles=['admin', 'analyst'])
+def upload_bulk():
+    """Multi-sheet bulk upload.
+
+    mode=parameter  — one parameter across all catchments (each sheet = 1 catchment, 6-col format)
+    mode=bulk       — all parameters across all catchments (each sheet = 1 catchment, 3-section format)
+    """
+    from flask import g as _g
+    if getattr(_g, 'current_user_plan', 'basic') == 'basic':
+        return jsonify({'success': False, 'error': 'Excel upload requires a Pro plan.', 'error_code': 'PLAN_RESTRICTED'}), 403
+
+    mode     = request.form.get('mode', '').lower()
+    category = request.form.get('category', '').strip().lower()
+
+    if mode not in ('parameter', 'bulk'):
+        return jsonify({'success': False, 'error': 'mode must be "parameter" or "bulk"'}), 400
+    if mode == 'parameter' and category not in TEMPLATE_COLUMNS:
+        return jsonify({'success': False, 'error': 'category required for parameter mode (recharge, baseflow, gwlevel)'}), 400
+
+    if 'file' not in request.files:
+        return jsonify(get_error_response('NO_FILE', 'No file in request')), 400
+    file = request.files['file']
+    is_valid, err = validate_file(file)
+    if not is_valid:
+        return jsonify(err), 400
+
+    with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
+        filepath = tmp.name
+        file.save(filepath)
+
+    safe_name = secure_filename(file.filename) or 'bulk_upload.xlsx'
+    total_inserted = 0
+    total_errors   = 0
+    summary        = []
+
+    try:
+        xl     = pd.ExcelFile(filepath)
+        sheets = xl.sheet_names
+
+        for sheet_name in sheets:
+            catchment_name = sheet_name.strip()
+            if catchment_name not in CATCHMENTS:
+                summary.append({'sheet': sheet_name, 'status': 'skipped',
+                                 'reason': f'"{catchment_name}" is not a recognised catchment name'})
+                continue
+
+            catchment_id = db.get_catchment_id(catchment_name)
+            if not catchment_id:
+                summary.append({'sheet': sheet_name, 'status': 'skipped',
+                                 'reason': 'Catchment not found in database'})
+                continue
+
+            sheet_inserted = 0
+            sheet_errors   = 0
+
+            if mode == 'parameter':
+                source_id = db.create_data_source(
+                    safe_name, category.upper(), catchment_name,
+                    uploaded_by=g.current_user_id, org_id=g.current_user_org_id,
+                )
+                if source_id:
+                    ins, errs = _parse_sheet_single_cat(
+                        filepath, sheet_name, category,
+                        source_id, catchment_id, catchment_name, g.current_user_org_id,
+                    )
+                    sheet_inserted += ins
+                    sheet_errors   += len(errs)
+                    db.update_data_source_status(
+                        source_id,
+                        'Completed' if not errs else 'Completed with Errors',
+                        None, ins, (None, None),
+                    )
+
+            else:  # bulk — all 3 categories
+                for cat in ('recharge', 'baseflow', 'gwlevel'):
+                    source_id = db.create_data_source(
+                        safe_name, cat.upper(), catchment_name,
+                        uploaded_by=g.current_user_id, org_id=g.current_user_org_id,
+                    )
+                    if source_id:
+                        ins, errs = _parse_sheet_bulk_cat(
+                            filepath, sheet_name, cat,
+                            source_id, catchment_id, catchment_name, g.current_user_org_id,
+                        )
+                        sheet_inserted += ins
+                        sheet_errors   += len(errs)
+                        db.update_data_source_status(
+                            source_id,
+                            'Completed' if not errs else 'Completed with Errors',
+                            None, ins, (None, None),
+                        )
+
+            total_inserted += sheet_inserted
+            total_errors   += sheet_errors
+            summary.append({
+                'sheet': sheet_name,
+                'catchment': catchment_name,
+                'mode': mode,
+                'inserted': sheet_inserted,
+                'errors': sheet_errors,
+            })
+
+        return jsonify({
+            'success': True,
+            'mode': mode,
+            'processed_records': total_inserted,
+            'error_count': total_errors,
+            'summary': summary,
+        })
+
+    except Exception as exc:
+        logger.error(f'Bulk upload error: {exc}')
+        logger.error(traceback.format_exc())
+        return jsonify(get_error_response('BULK_UPLOAD_ERROR', str(exc))), 500
+    finally:
+        try:
+            os.remove(filepath)
+        except Exception:
+            pass
 
 
 @app.errorhandler(404)

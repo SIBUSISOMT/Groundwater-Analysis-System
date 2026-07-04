@@ -30,5 +30,4 @@ pytest-cov>=4.1.0
 
 # Optional typing support (backward compat if needed)
 typing-extensions>=4.7.1
-openai>=1.0.0
 
