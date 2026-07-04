@@ -917,9 +917,9 @@ def create_user():
     if not all([username, email]):
         return jsonify({"success": False,
                         "error": "username and email are required."}), 400
-    if role not in ("admin", "analyst", "viewer"):
+    if role not in ("admin", "analyst", "viewer", "standard_user"):
         return jsonify({"success": False,
-                        "error": "Role must be admin, analyst or viewer."}), 400
+                        "error": "Role must be admin, standard_user, analyst or viewer."}), 400
     if plan not in ("basic", "pro"):
         plan = "basic"
 
@@ -1006,7 +1006,7 @@ def update_user(target_id):
     params  = []
 
     if "role" in data:
-        if data["role"] not in ("admin", "analyst", "viewer"):
+        if data["role"] not in ("admin", "analyst", "viewer", "standard_user"):
             return jsonify({"success": False, "error": "Invalid role."}), 400
         updates.append("role = ?")
         params.append(data["role"])
@@ -1089,7 +1089,7 @@ def admin_reset_password(target_id):
 
 
 @auth_bp.route("/api/auth/audit-log", methods=["GET"])
-@require_auth(roles=["admin"])
+@require_auth(roles=["admin", "standard_user"])
 def get_audit_log():
     limit  = min(request.args.get("limit",  100, type=int), 500)
     offset = request.args.get("offset", 0,   type=int)

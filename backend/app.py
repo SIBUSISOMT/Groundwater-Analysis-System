@@ -207,22 +207,35 @@ class Database:
             logger.error(f"Error inserting raw data: {e}")
             raise
     
-    def get_catchment_id(self, catchment_name):
-        """Get catchment ID by name"""
-        query = "SELECT catchment_id FROM dbo.Catchments WHERE catchment_name = ?"
+    def get_catchment_id(self, catchment_name, org_id):
+        """Get catchment ID by name, scoped to a tenant (Catchments is tenant-owned)"""
+        query = "SELECT catchment_id FROM dbo.Catchments WHERE catchment_name = ? AND org_id = ?"
         try:
-            results = self.execute_query(query, (catchment_name,))
+            results = self.execute_query(query, (catchment_name, org_id))
             if results:
                 return results[0][0]
             return None
         except Exception as e:
             logger.error(f"Error getting catchment ID: {e}")
             return None
-    
+
+    def get_sub_area_id(self, name, catchment_id, org_id):
+        """Get sub-area ID by name, scoped to a catchment + tenant"""
+        query = ("SELECT sub_area_id FROM dbo.SubAreas "
+                 "WHERE name = ? AND catchment_id = ? AND org_id = ? AND is_active = 1")
+        try:
+            results = self.execute_query(query, (name, catchment_id, org_id))
+            if results:
+                return results[0][0]
+            return None
+        except Exception as e:
+            logger.error(f"Error getting sub-area ID: {e}")
+            return None
+
     # ADD THESE MISSING METHODS:
-    
+
     def create_data_source(self, file_name, category, subcatchment_name=None,
-                           uploaded_by=None, org_id=None):
+                           uploaded_by=None, org_id=None, sub_area_id=None):
         """Create data source record"""
         conn = None
         try:
@@ -230,14 +243,14 @@ class Database:
             cursor = conn.cursor()
 
             logger.info(f"Attempting INSERT: file_name={file_name}, category={category}, "
-                        f"subcatchment={subcatchment_name}, org_id={org_id}")
+                        f"subcatchment={subcatchment_name}, org_id={org_id}, sub_area_id={sub_area_id}")
 
             cursor.execute("""
                 INSERT INTO dbo.DataSources
-                    (file_name, category, subcatchment_name, processing_status, uploaded_by, org_id)
+                    (file_name, category, subcatchment_name, sub_area_id, processing_status, uploaded_by, org_id)
                 OUTPUT INSERTED.source_id
-                VALUES (?, ?, ?, 'Processing', ?, ?)
-            """, (file_name, category, subcatchment_name, uploaded_by, org_id))
+                VALUES (?, ?, ?, ?, 'Processing', ?, ?)
+            """, (file_name, category, subcatchment_name, sub_area_id, uploaded_by, org_id))
 
             # Fetch the returned source_id
             result = cursor.fetchone()
@@ -530,7 +543,7 @@ def validate_file(file, max_size=100*1024*1024):
 # USER INPUT VALIDATION
 # ============================================================================
 
-def validate_user_inputs(category, subcatchment):
+def validate_user_inputs(category, catchment, sub_area):
     """Validate user selections"""
     if not category or category.strip() == '':
         return False, get_error_response(
@@ -539,14 +552,21 @@ def validate_user_inputs(category, subcatchment):
             guidance=['1. Select a data category from the dropdown:',
                      '   • Recharge', '   • Baseflow', '   • GWLevel']
         )
-    
-    if not subcatchment or subcatchment.strip() == '':
+
+    if not catchment or catchment.strip() == '':
         return False, get_error_response(
-            error_code='MISSING_SUBCATCHMENT',
-            user_message='No catchment/subcatchment was selected.',
+            error_code='MISSING_CATCHMENT',
+            user_message='No catchment was selected.',
             guidance=['1. Select a catchment from the dropdown']
         )
-    
+
+    if not sub_area or sub_area.strip() == '':
+        return False, get_error_response(
+            error_code='MISSING_SUBAREA',
+            user_message='No sub area was selected.',
+            guidance=['1. Select a sub area from the dropdown (register one first if none exist yet)']
+        )
+
     return True, None
 
 # ============================================================================
@@ -653,7 +673,7 @@ def health_check():
     
 
 @app.route('/api/upload', methods=['POST'])
-@require_auth(roles=['admin', 'analyst'])
+@require_auth(roles=['admin', 'analyst', 'standard_user'])
 def upload_file():
     """File upload endpoint with full processing"""
     from flask import g as _g
@@ -677,13 +697,14 @@ def upload_file():
         if not is_valid:
             return jsonify(error_resp), 400
         
-        category = request.form.get('category', '').strip().lower()
-        subcatchment = request.form.get('subcatchment', '').strip()
-        
-        is_valid, error_resp = validate_user_inputs(category, subcatchment)
+        category  = request.form.get('category', '').strip().lower()
+        catchment = request.form.get('catchment', '').strip()
+        sub_area  = request.form.get('sub_area', '').strip()
+
+        is_valid, error_resp = validate_user_inputs(category, catchment, sub_area)
         if not is_valid:
             return jsonify(error_resp), 400
-        
+
         # Validate category value
         if category not in ['recharge', 'baseflow', 'gwlevel']:
             return jsonify(get_error_response(
@@ -691,13 +712,35 @@ def upload_file():
                 'Invalid category selected',
                 found_data={'provided': category, 'valid': ['recharge', 'baseflow', 'gwlevel']}
             )), 400
-        
+
+        # ========== STEP 2b: Resolve catchment + sub area (both tenant-scoped) ==========
+        catchment_id = db.get_catchment_id(catchment, g.current_user_org_id)
+        if not catchment_id:
+            return jsonify(get_error_response(
+                'CATCHMENT_NOT_FOUND',
+                f'Catchment "{catchment}" not found in database'
+            )), 400
+
+        sub_area_id = db.get_sub_area_id(sub_area, catchment_id, g.current_user_org_id)
+        if not sub_area_id:
+            return jsonify(get_error_response(
+                'SUBAREA_NOT_FOUND',
+                f'Sub area "{sub_area}" not found for catchment "{catchment}"'
+            )), 400
+
+        logger.info(f"Using catchment: {catchment_id}, sub area: {sub_area_id}")
+
+        # subcatchment kept as the resolved sub-area's display name so every
+        # downstream reference below (original_sheet_name, JSON responses,
+        # DataSources.subcatchment_name) is unaffected by this rework.
+        subcatchment = sub_area
+
         # ========== STEP 3: Save file temporarily ==========
         with tempfile.NamedTemporaryFile(delete=False, suffix='.xlsx') as tmp:
             filepath = tmp.name
             file.save(filepath)
             logger.info(f"File saved: {filepath}")
-        
+
         # ========== STEP 4: Create data source record WITH SUBCATCHMENT ==========
         safe_name = secure_filename(file.filename) or 'upload.xlsx'
         try:
@@ -705,6 +748,7 @@ def upload_file():
                 safe_name, category, subcatchment,
                 uploaded_by=g.current_user_id,
                 org_id=g.current_user_org_id,
+                sub_area_id=sub_area_id,
             )
             if not source_id:
                 logger.error("create_data_source returned None")
@@ -719,18 +763,6 @@ def upload_file():
             return jsonify(get_error_response(
                 'DATABASE_ERROR', f'Failed to create data source: {str(ds_error)}'
             )), 500
-        
-        # ========== STEP 5: Get catchment ID ==========
-        catchment_id = db.get_catchment_id(subcatchment)
-        if not catchment_id:
-            db.update_data_source_status(source_id, 'Failed', 
-                                        f'Catchment not found: {subcatchment}')
-            return jsonify(get_error_response(
-                'CATCHMENT_NOT_FOUND',
-                f'Catchment "{subcatchment}" not found in database'
-            )), 400
-        
-        logger.info(f"Using catchment: {catchment_id}")
         
         # ========== STEP 6: Read and process Excel ==========
         try:
@@ -1276,6 +1308,10 @@ def get_catchments():
         GROUP BY c.catchment_id, c.catchment_name
         ORDER BY c.catchment_name
         """
+        # Not additionally filtering c.org_id here — pd.org_id already scopes
+        # this correctly, since catchment_id is always resolved via an
+        # org-scoped lookup at upload time (db.get_catchment_id), so a row's
+        # catchment always belongs to the same org as the ProcessedData row.
 
         results = _exec(query, (g.current_user_org_id,))
 
@@ -1304,7 +1340,117 @@ def get_catchments():
             'error': str(e),
             'timestamp': datetime.now().isoformat()
         }), 500
-    
+
+
+@app.route('/api/catchments/manage', methods=['GET'])
+@require_auth()
+def list_org_catchments():
+    """Plain org-scoped catchment list (no data-existence join) — for
+    upload-page dropdowns and the catchment-registration UI."""
+    try:
+        rows = _exec(
+            "SELECT catchment_id, catchment_name, description FROM dbo.Catchments "
+            "WHERE org_id = ? ORDER BY catchment_name",
+            (g.current_user_org_id,)
+        )
+        catchments = [{'id': r[0], 'name': r[1], 'description': r[2]} for r in rows] if rows else []
+        return jsonify({'success': True, 'catchments': catchments}), 200
+    except Exception as e:
+        logger.error(f"Error listing org catchments: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/catchments', methods=['POST'])
+@require_auth(roles=['admin', 'analyst', 'standard_user'])
+def create_catchment():
+    """Register a new catchment for the caller's tenant."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get('catchment_name') or '').strip()
+    if not name:
+        return jsonify({'success': False, 'error': 'catchment_name is required'}), 400
+    try:
+        _exec(
+            "INSERT INTO dbo.Catchments (catchment_name, description, location, area_sqkm, org_id) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (name, data.get('description'), data.get('location'), data.get('area_sqkm'),
+             g.current_user_org_id),
+            fetch=False, commit=True,
+        )
+        new_row = _exec(
+            "SELECT TOP 1 catchment_id FROM dbo.Catchments WHERE catchment_name = ? AND org_id = ? ORDER BY catchment_id DESC",
+            (name, g.current_user_org_id)
+        )
+        return jsonify({'success': True, 'catchment_id': new_row[0][0] if new_row else None}), 201
+    except Exception as e:
+        msg = str(e)
+        if '2601' in msg or '2627' in msg:
+            return jsonify({'success': False, 'error': f'Catchment "{name}" already exists for your organization.'}), 409
+        logger.error(f"Error creating catchment: {e}")
+        return jsonify({'success': False, 'error': msg}), 500
+
+
+@app.route('/api/sub-areas', methods=['GET'])
+@require_auth()
+def list_sub_areas():
+    """Org-scoped Sub Areas, optionally filtered to one catchment."""
+    catchment_id = request.args.get('catchment_id', type=int)
+    try:
+        if catchment_id:
+            rows = _exec(
+                "SELECT sub_area_id, name, catchment_id FROM dbo.SubAreas "
+                "WHERE org_id = ? AND catchment_id = ? AND is_active = 1 ORDER BY name",
+                (g.current_user_org_id, catchment_id)
+            )
+        else:
+            rows = _exec(
+                "SELECT sub_area_id, name, catchment_id FROM dbo.SubAreas "
+                "WHERE org_id = ? AND is_active = 1 ORDER BY name",
+                (g.current_user_org_id,)
+            )
+        sub_areas = [{'id': r[0], 'name': r[1], 'catchment_id': r[2]} for r in rows] if rows else []
+        return jsonify({'success': True, 'sub_areas': sub_areas}), 200
+    except Exception as e:
+        logger.error(f"Error listing sub areas: {e}")
+        return jsonify({'success': False, 'error': str(e)}), 500
+
+
+@app.route('/api/sub-areas', methods=['POST'])
+@require_auth(roles=['admin', 'analyst', 'standard_user'])
+def create_sub_area():
+    """Register a new Sub Area under a catchment belonging to the caller's tenant."""
+    data = request.get_json(silent=True) or {}
+    name = (data.get('name') or '').strip()
+    catchment_id = data.get('catchment_id')
+    if not name or not catchment_id:
+        return jsonify({'success': False, 'error': 'name and catchment_id are required'}), 400
+
+    # Same no-info-leak pattern as _check_source_access: 404 if the catchment
+    # doesn't exist or belongs to a different org, rather than a generic 400/403.
+    owned = _exec(
+        "SELECT 1 FROM dbo.Catchments WHERE catchment_id = ? AND org_id = ?",
+        (catchment_id, g.current_user_org_id)
+    )
+    if not owned:
+        return jsonify({'success': False, 'error': 'Catchment not found'}), 404
+
+    try:
+        _exec(
+            "INSERT INTO dbo.SubAreas (catchment_id, org_id, name) VALUES (?, ?, ?)",
+            (catchment_id, g.current_user_org_id, name),
+            fetch=False, commit=True,
+        )
+        new_row = _exec(
+            "SELECT TOP 1 sub_area_id FROM dbo.SubAreas WHERE catchment_id = ? AND name = ? ORDER BY sub_area_id DESC",
+            (catchment_id, name)
+        )
+        return jsonify({'success': True, 'sub_area_id': new_row[0][0] if new_row else None}), 201
+    except Exception as e:
+        msg = str(e)
+        if '2601' in msg or '2627' in msg:
+            return jsonify({'success': False, 'error': f'Sub area "{name}" already exists for this catchment.'}), 409
+        logger.error(f"Error creating sub area: {e}")
+        return jsonify({'success': False, 'error': msg}), 500
+
 
 @app.route('/api/summary', methods=['GET'])
 @require_auth()
@@ -1485,7 +1631,7 @@ def get_source_records(source_id):
 
 
 @app.route('/api/sources/<int:source_id>/records', methods=['PUT'])
-@require_auth(roles=['admin', 'analyst'])
+@require_auth(roles=['admin', 'analyst', 'standard_user'])
 def update_source_records(source_id):
     """Edit records — admin can edit any org source, analyst only their own uploads."""
     err = _check_source_access(source_id, require_uploader=True)
@@ -1577,7 +1723,7 @@ def update_source_records(source_id):
 
 
 @app.route('/api/sources/<int:source_id>/records', methods=['DELETE'])
-@require_auth(roles=['admin', 'analyst'])
+@require_auth(roles=['admin', 'analyst', 'standard_user'])
 def delete_source_records(source_id):
     """Delete records — admin can delete any org source, analyst only their own uploads."""
     err = _check_source_access(source_id, require_uploader=True)
@@ -1614,7 +1760,7 @@ def delete_source_records(source_id):
 
 
 @app.route('/api/sources/<int:source_id>', methods=['GET', 'DELETE'])
-@require_auth(roles=['admin', 'analyst'])
+@require_auth(roles=['admin', 'analyst', 'standard_user'])
 def handle_source(source_id):
     """Get source details or delete source."""
     # GET: any org member may view; DELETE: admin or the uploader
@@ -2332,7 +2478,14 @@ def debug_baseflow_check():
 # UPLOAD TEMPLATES
 # ============================================================================
 
-CATCHMENTS = ['Assegai', 'Crocodile', 'Lower Komati', 'Ngwempisi', 'Sabie', 'Sand', 'Upper Komati']
+def _get_org_catchment_names(org_id):
+    """Tenant-scoped list of registered catchment names (Catchments is tenant-owned)."""
+    rows = db.execute_query(
+        "SELECT catchment_name FROM dbo.Catchments WHERE org_id = ? ORDER BY catchment_name",
+        (org_id,)
+    )
+    return [r[0] for r in rows] if rows else []
+
 
 TEMPLATE_COLUMNS = {
     'recharge': ['measurement date', 'recharge (inches)', 'average recharge', 'stdev', 'drought index - recharge', 'recharge deviation'],
@@ -2513,6 +2666,7 @@ def download_template():
     tpl_type  = request.args.get('type', 'single').lower()
     category  = request.args.get('category', '').lower()
     catchment = request.args.get('catchment', '').strip()
+    org_catchments = _get_org_catchment_names(g.current_user_org_id)
 
     if tpl_type not in ('single', 'parameter', 'bulk'):
         return jsonify({'success': False, 'error': 'type must be single, parameter, or bulk'}), 400
@@ -2520,8 +2674,10 @@ def download_template():
         return jsonify({'success': False, 'error': 'category required (recharge, baseflow, gwlevel)'}), 400
     if tpl_type == 'single' and not catchment:
         return jsonify({'success': False, 'error': 'catchment required for single template'}), 400
-    if tpl_type == 'single' and catchment not in CATCHMENTS:
-        return jsonify({'success': False, 'error': f'Unknown catchment. Valid: {", ".join(CATCHMENTS)}'}), 400
+    if tpl_type == 'single' and catchment not in org_catchments:
+        return jsonify({'success': False, 'error': f'Unknown catchment. Valid: {", ".join(org_catchments)}'}), 400
+    if tpl_type in ('parameter', 'bulk') and not org_catchments:
+        return jsonify({'success': False, 'error': 'No catchments registered yet. Register a catchment first.'}), 400
 
     wb = Workbook()
     wb.remove(wb.active)
@@ -2532,13 +2688,13 @@ def download_template():
         filename = f'template_{category}_{catchment.replace(" ", "_")}.xlsx'
 
     elif tpl_type == 'parameter':
-        for c in CATCHMENTS:
+        for c in org_catchments:
             ws = wb.create_sheet(title=c[:31])
             _write_single_sheet(ws, category, catchment_label=c)
         filename = f'template_{category}_all_catchments.xlsx'
 
     else:
-        for c in CATCHMENTS:
+        for c in org_catchments:
             ws = wb.create_sheet(title=c[:31])
             _write_bulk_sheet(ws, c)
         filename = 'template_bulk_all_parameters_all_catchments.xlsx'
@@ -2701,7 +2857,7 @@ def _parse_sheet_bulk_cat(xl_path, sheet_name, category, source_id, catchment_id
 
 
 @app.route('/api/upload/bulk', methods=['POST'])
-@require_auth(roles=['admin', 'analyst'])
+@require_auth(roles=['admin', 'analyst', 'standard_user'])
 def upload_bulk():
     """Multi-sheet bulk upload.
 
@@ -2735,6 +2891,7 @@ def upload_bulk():
     total_inserted = 0
     total_errors   = 0
     summary        = []
+    org_catchments = _get_org_catchment_names(g.current_user_org_id)
 
     try:
         xl     = pd.ExcelFile(filepath)
@@ -2742,12 +2899,12 @@ def upload_bulk():
 
         for sheet_name in sheets:
             catchment_name = sheet_name.strip()
-            if catchment_name not in CATCHMENTS:
+            if catchment_name not in org_catchments:
                 summary.append({'sheet': sheet_name, 'status': 'skipped',
-                                 'reason': f'"{catchment_name}" is not a recognised catchment name'})
+                                 'reason': f'"{catchment_name}" is not a recognised catchment name for your organization'})
                 continue
 
-            catchment_id = db.get_catchment_id(catchment_name)
+            catchment_id = db.get_catchment_id(catchment_name, g.current_user_org_id)
             if not catchment_id:
                 summary.append({'sheet': sheet_name, 'status': 'skipped',
                                  'reason': 'Catchment not found in database'})

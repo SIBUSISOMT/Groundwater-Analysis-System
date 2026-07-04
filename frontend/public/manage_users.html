@@ -62,9 +62,10 @@
             background: rgba(0,0,0,0.5);
             backdrop-filter: blur(4px);
         }
-        .badge-role-admin   { background:#fef3c7; color:#92400e; }
-        .badge-role-analyst { background:#dbeafe; color:#1e40af; }
-        .badge-role-viewer  { background:#f3f4f6; color:#374151; }
+        .badge-role-admin         { background:#fef3c7; color:#92400e; }
+        .badge-role-standard_user { background:#ccfbf1; color:#115e59; }
+        .badge-role-analyst       { background:#dbeafe; color:#1e40af; }
+        .badge-role-viewer        { background:#f3f4f6; color:#374151; }
         .badge-plan-pro     { background:#d1fae5; color:#065f46; }
         .badge-plan-basic   { background:#e0e7ff; color:#3730a3; }
         .badge-active       { background:#d1fae5; color:#065f46; }
@@ -215,6 +216,7 @@
                     <select id="roleFilter" class="px-3 py-2 border border-gray-200 rounded-lg text-sm focus:outline-none focus:border-blue-400">
                         <option value="">All Roles</option>
                         <option value="admin">Admin</option>
+                        <option value="standard_user">Standard User</option>
                         <option value="analyst">Analyst</option>
                         <option value="viewer">Viewer</option>
                     </select>
@@ -332,6 +334,7 @@
                         <select id="newRole" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-blue-400">
                             <option value="viewer">Viewer</option>
                             <option value="analyst">Analyst</option>
+                            <option value="standard_user">Standard User</option>
                             <option value="admin">Admin</option>
                         </select>
                     </div>
@@ -377,6 +380,7 @@
                         <select id="editRole" class="w-full px-3 py-2.5 border border-gray-300 rounded-xl text-sm focus:outline-none focus:border-purple-400">
                             <option value="viewer">Viewer</option>
                             <option value="analyst">Analyst</option>
+                            <option value="standard_user">Standard User</option>
                             <option value="admin">Admin</option>
                         </select>
                     </div>
@@ -543,8 +547,9 @@
         const currentUserId = HydroAuth.getUser()?.user_id;
 
         tbody.innerHTML = users.map(u => {
-            const roleBadge = badge(u.role,
+            const roleBadge = badge(u.role === 'standard_user' ? 'Standard User' : u.role,
                 u.role === 'admin' ? 'badge-role-admin' :
+                u.role === 'standard_user' ? 'badge-role-standard_user' :
                 u.role === 'analyst' ? 'badge-role-analyst' : 'badge-role-viewer');
             const planBadge = badge(u.plan === 'pro' ? 'Pro' : 'Basic',
                 u.plan === 'pro' ? 'badge-plan-pro' : 'badge-plan-basic');

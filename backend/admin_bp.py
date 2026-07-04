@@ -152,6 +152,30 @@ def list_tenants():
     return jsonify({'success': True, 'tenants': tenants, 'count': len(tenants)}), 200
 
 
+def _seed_wq_indicators_for_org(org_id):
+    """
+    Give a newly created tenant a starting copy of the SANS 241 indicator
+    catalogue (regulatory reference data — sensible to duplicate as a
+    template each org can then edit/extend independently). Catchments are
+    deliberately NOT seeded here — those are business/operational data the
+    tenant registers themselves from scratch.
+    """
+    try:
+        _q(
+            "INSERT INTO dbo.WQ_Indicators "
+            "(org_id, indicator_code, indicator_name, unit, lower_std, upper_std, std_reference, display_order, "
+            " risk_class, sans_class1_limit, sans_class2_limit, method_detection_limit, equivalent_weight, "
+            " ion_type, blue_drop_category) "
+            "SELECT ?, indicator_code, indicator_name, unit, lower_std, upper_std, std_reference, display_order, "
+            " risk_class, sans_class1_limit, sans_class2_limit, method_detection_limit, equivalent_weight, "
+            " ion_type, blue_drop_category "
+            "FROM dbo.WQ_Indicators WHERE org_id = 1",
+            (org_id,), fetch=False, commit=True,
+        )
+    except Exception as exc:
+        logger.error('Failed to seed WQ_Indicators for org %s: %s', org_id, exc)
+
+
 @admin_bp.route('/api/admin/tenants', methods=['POST'])
 @require_system_admin
 def create_tenant():
@@ -188,6 +212,8 @@ def create_tenant():
     if not org_result:
         return jsonify({'success': False, 'error': 'Failed to create organisation.'}), 500
     org_id = org_result[0][0]
+
+    _seed_wq_indicators_for_org(org_id)
 
     # Create tenant admin account (inactive, pending setup)
     import pyotp
@@ -463,7 +489,7 @@ def update_user(user_id):
     updates = []
     params  = []
 
-    if 'role' in data and data['role'] in ('viewer', 'analyst', 'admin'):
+    if 'role' in data and data['role'] in ('viewer', 'analyst', 'admin', 'standard_user'):
         updates.append('role = ?');      params.append(data['role'])
     if 'plan' in data and data['plan'] in ('basic', 'pro'):
         updates.append('[plan] = ?');    params.append(data['plan'])

@@ -101,6 +101,7 @@
         .matrix-cell.violation   { background:#f43f5e; }
         .matrix-cell.no-data     { background:#e2e8f0; }
         .matrix-cell.no-standard { background:#d1fae5; opacity:.7; }
+        .matrix-cell.not-assessed { background:repeating-linear-gradient(45deg, #e2e8f0, #e2e8f0 4px, #cbd5e1 4px, #cbd5e1 8px); }
 
         /* Tooltip */
         .wq-tooltip {
@@ -317,7 +318,7 @@
                     </div>
                     <div>
                         <h2 class="text-xl font-bold text-white">Water Quality</h2>
-                        <p class="text-xs text-cyan-200">Sampling stations · Compliance monitoring · SANS 241:2015</p>
+                        <p class="text-xs text-cyan-200">Sampling stations · Compliance monitoring · SANS 241:2015 &amp; DWAF TWQR</p>
                     </div>
                 </div>
             </div>
@@ -355,6 +356,12 @@
             </button>
             <button class="wq-tab text-gray-300" data-tab="alerts" onclick="WQ.switchTab('alerts')">
                 <i class="fas fa-bell mr-1.5"></i>Alerts
+            </button>
+            <button class="wq-tab text-gray-300" data-tab="wsp" onclick="WQ.switchTab('wsp')">
+                <i class="fas fa-shield-alt mr-1.5"></i>Risk &amp; Safety Plan
+            </button>
+            <button class="wq-tab text-gray-300" data-tab="diagnostics" onclick="WQ.switchTab('diagnostics')">
+                <i class="fas fa-search mr-1.5"></i>Diagnostics
             </button>
         </div>
     </div>
@@ -475,6 +482,13 @@
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Station</label>
                     <select id="analysis-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" onchange="WQ.loadAnalysis()">
                         <option value="">All stations</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Standard</label>
+                    <select id="analysis-standard" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" onchange="WQ.loadComplianceMatrix()">
+                        <option value="sans241">SANS 241:2015 (drinking water)</option>
+                        <option value="twqr">TWQR — DWAF Vol 7 (aquatic ecosystems)</option>
                     </select>
                 </div>
                 <div>
@@ -634,7 +648,7 @@
                             <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span><b>Reading Date</b> column: YYYY-MM-DD format</span></li>
                             <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span><b>Station Name</b> must match an existing station exactly</span></li>
                             <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>Blank cells are accepted — indicator will be recorded as not measured</span></li>
-                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>Compliance is auto-calculated against SANS 241:2015 standards</span></li>
+                            <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>Compliance is auto-calculated against SANS 241:2015 (drinking water) and DWAF Vol 7 TWQR (aquatic ecosystems) — pick a standard on the Analysis tab</span></li>
                             <li class="flex gap-2"><i class="fas fa-check-circle mt-0.5" style="color:#0d9488;"></i><span>Re-uploading the same station + date updates existing measurements</span></li>
                         </ul>
                     </div>
@@ -890,7 +904,203 @@
             </div>
         </div>
 
+        <!-- ════════ RISK & SAFETY PLAN TAB ════════ -->
+        <div id="tab-wsp" style="display:none;">
+            <div class="flex items-center justify-between mb-5">
+                <div>
+                    <div class="section-head mb-1">Water Safety Plan</div>
+                    <p class="text-xs text-gray-400">Hazard risk register and corrective-action tracking — the risk-management evidence WHO/Blue Drop assessors look for.</p>
+                </div>
+                <div class="flex gap-2">
+                    <button onclick="WQ.openRiskModal()" class="px-4 py-2 text-sm font-semibold text-white rounded-xl transition-all" style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                        <i class="fas fa-plus mr-1"></i> Add Risk
+                    </button>
+                    <button onclick="WQ.exportWSP()" class="px-4 py-2 text-sm font-semibold rounded-xl border border-gray-200 text-gray-600 hover:bg-gray-50">
+                        <i class="fas fa-file-export mr-1"></i> Export WSP
+                    </button>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm p-5 mb-5" style="border:1px solid #f1f5f9;">
+                <div class="section-head mb-3">Risk Register</div>
+                <div id="risk-register-list">
+                    <p class="text-gray-400 text-xs text-center py-4">Loading…</p>
+                </div>
+            </div>
+
+            <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
+                <div class="flex items-center justify-between mb-3">
+                    <div class="section-head">Corrective Actions</div>
+                    <select id="capa-status-filter" class="border border-gray-200 rounded-lg px-2 py-1 text-xs" onchange="WQ.loadCorrectiveActions()">
+                        <option value="">All statuses</option>
+                        <option value="open">Open</option>
+                        <option value="in_progress">In Progress</option>
+                        <option value="closed">Closed</option>
+                        <option value="overdue">Overdue</option>
+                    </select>
+                </div>
+                <div id="capa-list">
+                    <p class="text-gray-400 text-xs text-center py-4">Loading…</p>
+                </div>
+            </div>
+        </div>
+
+        <!-- ════════ DIAGNOSTICS TAB ════════ -->
+        <div id="tab-diagnostics" style="display:none;">
+            <div class="mb-4">
+                <div class="section-head mb-1">Diagnostics</div>
+                <p class="text-xs text-gray-400">Deep analysis of already-uploaded lab results — probable contamination source attribution, fitness-for-use across irrigation/livestock/aquaculture, and an aquatic ecosystem health score. All findings are deterministic and traceable to real DWAF/SANS thresholds.</p>
+            </div>
+
+            <!-- Diagnostics filter bar -->
+            <div class="bg-white rounded-xl shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-end" style="border:1px solid #f1f5f9;">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Station</label>
+                    <select id="diag-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
+                        <option value="">Select station…</option>
+                    </select>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Date From</label>
+                    <input type="date" id="diag-from" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-500 mb-1">Date To</label>
+                    <input type="date" id="diag-to" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                </div>
+                <button onclick="WQ.loadDiagnosticsTab()"
+                        class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition-all"
+                        style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                    <i class="fas fa-search mr-1"></i> Run Diagnostics
+                </button>
+            </div>
+
+            <div class="grid grid-cols-3 gap-4 mb-5">
+                <!-- Contamination Source Findings -->
+                <div class="analytic-card col-span-2">
+                    <div class="a-head">Contamination Source Findings</div>
+                    <p class="text-xs text-gray-400 mb-3">Weight-of-evidence source attribution — each candidate is ranked by confidence and backed by the specific measured signals that support (or contradict) it.</p>
+                    <div id="diag-findings-panel">
+                        <p class="text-gray-400 text-xs text-center py-6">Select a station and click Run Diagnostics.</p>
+                    </div>
+                </div>
+
+                <!-- Aquatic Ecosystem Health Score -->
+                <div class="analytic-card">
+                    <div class="a-head">Aquatic Ecosystem Health Score</div>
+                    <div class="flex flex-col items-center gap-2 py-2" id="eco-panel">
+                        <svg class="bd-ring" viewBox="0 0 90 90">
+                            <circle cx="45" cy="45" r="38" fill="none" stroke="#e2e8f0" stroke-width="9"/>
+                            <circle id="eco-ring-fill" cx="45" cy="45" r="38" fill="none" stroke="#0891b2" stroke-width="9"
+                                    stroke-linecap="round" stroke-dasharray="239" stroke-dashoffset="239"
+                                    transform="rotate(-90 45 45)"/>
+                            <text x="45" y="48" text-anchor="middle" font-size="14" font-weight="900" fill="#0f172a" id="eco-score-txt">—</text>
+                        </svg>
+                        <div class="text-sm font-bold text-center" id="eco-grade">No data</div>
+                        <div class="text-xs text-gray-400 text-center" id="eco-sub">Run diagnostics to compute</div>
+                    </div>
+                    <div class="mt-2 text-xs space-y-1 max-h-40 overflow-y-auto" id="eco-breakdown"></div>
+                </div>
+            </div>
+
+            <!-- Fitness for Use -->
+            <div class="analytic-card mb-5">
+                <div class="a-head">Fitness for Use</div>
+                <p class="text-xs text-gray-400 mb-3">Irrigation (DWAF Vol 4), livestock watering (DWAF Vol 5) and aquaculture (DWAF Vol 6) suitability, derived live from the latest reading — separate from drinking-water (SANS 241) and aquatic-ecosystem (TWQR) compliance shown elsewhere.</p>
+                <div class="grid grid-cols-3 gap-4">
+                    <div>
+                        <div class="text-xs font-bold text-gray-600 mb-2"><i class="fas fa-tint mr-1 text-cyan-500"></i>Irrigation</div>
+                        <div id="fitness-irrigation-panel">
+                            <p class="text-gray-400 text-xs py-4">Run diagnostics to assess.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs font-bold text-gray-600 mb-2"><i class="fas fa-cow mr-1 text-amber-600"></i>Livestock Watering</div>
+                        <div id="fitness-livestock-panel">
+                            <p class="text-gray-400 text-xs py-4">Run diagnostics to assess.</p>
+                        </div>
+                    </div>
+                    <div>
+                        <div class="text-xs font-bold text-gray-600 mb-2"><i class="fas fa-fish mr-1 text-teal-600"></i>Aquaculture</div>
+                        <div id="fitness-aquaculture-panel">
+                            <p class="text-gray-400 text-xs py-4">Run diagnostics to assess.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
     </div><!-- /padding wrapper -->
+</div>
+
+<!-- ─── Risk Register Modal ───────────────────────────────────────────────── -->
+<div id="risk-modal" class="wq-modal-backdrop" style="display:none;">
+    <div class="wq-modal">
+        <div class="flex items-center justify-between mb-5">
+            <h3 class="text-base font-bold text-gray-900">Add Risk</h3>
+            <button onclick="WQ.closeRiskModal()" class="text-gray-400 hover:text-gray-600">
+                <i class="fas fa-times text-lg"></i>
+            </button>
+        </div>
+        <form id="risk-form" onsubmit="WQ.saveRisk(event)">
+            <div class="space-y-4">
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Hazard Description <span class="text-red-500">*</span></label>
+                    <textarea id="risk-hazard" rows="2" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="e.g. Upstream agricultural runoff raising nitrate levels" required></textarea>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Hazard Source</label>
+                    <input type="text" id="risk-source" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="e.g. Farmland upstream of station">
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Station (optional)</label>
+                    <select id="risk-station-sel" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                        <option value="">Org-wide hazard</option>
+                    </select>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Likelihood (1-5) <span class="text-red-500">*</span></label>
+                        <select id="risk-likelihood" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" required>
+                            <option value="1">1 — Rare</option>
+                            <option value="2">2 — Unlikely</option>
+                            <option value="3" selected>3 — Possible</option>
+                            <option value="4">4 — Likely</option>
+                            <option value="5">5 — Almost certain</option>
+                        </select>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Severity (1-5) <span class="text-red-500">*</span></label>
+                        <select id="risk-severity" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" required>
+                            <option value="1">1 — Negligible</option>
+                            <option value="2">2 — Minor</option>
+                            <option value="3" selected>3 — Moderate</option>
+                            <option value="4">4 — Major</option>
+                            <option value="5">5 — Catastrophic</option>
+                        </select>
+                    </div>
+                </div>
+                <div>
+                    <label class="block text-xs font-semibold text-gray-600 mb-1">Control Measure</label>
+                    <textarea id="risk-control" rows="2" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="e.g. Monthly nitrate sampling, riparian buffer maintenance"></textarea>
+                </div>
+                <div class="grid grid-cols-2 gap-3">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Monitoring Frequency</label>
+                        <input type="text" id="risk-freq" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="e.g. Monthly">
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Responsible Person</label>
+                        <input type="text" id="risk-responsible" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm" placeholder="e.g. Site manager">
+                    </div>
+                </div>
+                <button type="submit" class="w-full py-2.5 text-sm font-semibold text-white rounded-xl transition-all" style="background:linear-gradient(135deg,#0891b2,#0d9488);">
+                    Save Risk
+                </button>
+                <div id="risk-form-msg" class="hidden text-xs font-semibold"></div>
+            </div>
+        </form>
+    </div>
 </div>
 
 <!-- ─── Tooltip ──────────────────────────────────────────────────────────── -->
@@ -940,6 +1150,24 @@
                         <input type="number" id="station-lng" step="0.0000001" min="-180" max="180"
                                class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
                                placeholder="28.1871">
+                    </div>
+                </div>
+                <div class="grid grid-cols-2 gap-4">
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Aquifer Type (optional)</label>
+                        <select id="station-aquifer-type" class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                            <option value="">Unknown</option>
+                            <option value="unconfined">Unconfined</option>
+                            <option value="semi-confined">Semi-confined</option>
+                            <option value="confined">Confined</option>
+                        </select>
+                        <p class="text-xs text-gray-400 mt-1">Boosts contamination-source confidence for deep/confined stations. Not required.</p>
+                    </div>
+                    <div>
+                        <label class="block text-xs font-semibold text-gray-600 mb-1">Depth (m, optional)</label>
+                        <input type="number" id="station-depth" step="0.1" min="0"
+                               class="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none"
+                               placeholder="e.g. 45">
                     </div>
                 </div>
                 <div id="station-active-row" style="display:none;">

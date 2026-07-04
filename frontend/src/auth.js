@@ -94,7 +94,7 @@ const HydroAuth = (function () {
     }
 
     function _updateSidebarUI(user) {
-        const roleLabels = { admin: 'Administrator', analyst: 'Analyst', viewer: 'Viewer' };
+        const roleLabels = { admin: 'Administrator', standard_user: 'Standard User', analyst: 'Analyst', viewer: 'Viewer' };
         const initials   = (user.username || 'U').slice(0, 2).toUpperCase();
         const displayRole = user.is_system_admin ? 'System Admin' : (roleLabels[user.role] || user.role);
 
@@ -237,7 +237,7 @@ const HydroAuth = (function () {
     function getAccessToken() { return _accessToken; }
     function getPlan()        { return _user ? (_user.plan || 'basic') : 'basic'; }
     function isPro()          { return _user && _user.plan === 'pro'; }
-    function canUpload()      { return _user && ['admin', 'analyst'].includes(_user.role) && isPro(); }
+    function canUpload()      { return _user && ['admin', 'analyst', 'standard_user'].includes(_user.role) && isPro(); }
     function isAdmin()        { return _user && _user.role === 'admin'; }
     function isViewer()       { return _user && _user.role === 'viewer'; }
     function isSystemAdmin()  { return _user && _user.is_system_admin === true; }

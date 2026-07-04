@@ -58,7 +58,7 @@ class WaterQualityApp {
     // ── Tab management ────────────────────────────────────────────────────────
 
     switchTab(tab) {
-        ['overview', 'stations', 'analysis', 'upload', 'analytics', 'alerts'].forEach(t => {
+        ['overview', 'stations', 'analysis', 'upload', 'analytics', 'alerts', 'wsp', 'diagnostics'].forEach(t => {
             const el = document.getElementById(`tab-${t}`);
             if (el) el.style.display = t === tab ? '' : 'none';
             const btn = document.querySelector(`.wq-tab[data-tab="${t}"]`);
@@ -83,6 +83,14 @@ class WaterQualityApp {
             this._populateAlertSelects();
             this.loadAlertConfigs();
             this.loadAlertLog();
+        }
+        if (tab === 'wsp') {
+            this._populateRiskStationSelect();
+            this.loadRiskRegister();
+            this.loadCorrectiveActions();
+        }
+        if (tab === 'diagnostics') {
+            this._populateDiagnosticsStationSelect();
         }
     }
 
@@ -319,6 +327,8 @@ class WaterQualityApp {
         document.getElementById('station-desc').value     = station ? (station.description || '') : '';
         document.getElementById('station-lat').value      = station && station.lat !== null ? station.lat : '';
         document.getElementById('station-lng').value      = station && station.lng !== null ? station.lng : '';
+        document.getElementById('station-aquifer-type').value = station && station.aquifer_type ? station.aquifer_type : '';
+        document.getElementById('station-depth').value     = station && station.depth_m !== null && station.depth_m !== undefined ? station.depth_m : '';
         const activeRow = document.getElementById('station-active-row');
         const activeCb  = document.getElementById('station-active');
         if (station) {
@@ -338,14 +348,18 @@ class WaterQualityApp {
 
     async saveStation(e) {
         e.preventDefault();
-        const id      = document.getElementById('station-edit-id').value;
-        const isEdit  = !!id;
+        const id       = document.getElementById('station-edit-id').value;
+        const isEdit   = !!id;
+        const depthRaw = document.getElementById('station-depth').value;
         const payload = {
             code:        document.getElementById('station-code').value.trim(),
             name:        document.getElementById('station-name').value.trim(),
             description: document.getElementById('station-desc').value.trim() || null,
             lat:         parseFloat(document.getElementById('station-lat').value) || null,
             lng:         parseFloat(document.getElementById('station-lng').value) || null,
+            aquifer_type: document.getElementById('station-aquifer-type').value || null,
+            // depthRaw !== '' guard (not `|| null`) so a legitimate depth of 0m (surface station) isn't silently dropped
+            depth_m:     depthRaw !== '' && !isNaN(parseFloat(depthRaw)) ? parseFloat(depthRaw) : null,
             active:      isEdit ? document.getElementById('station-active').checked : true,
         };
         try {
@@ -423,9 +437,14 @@ class WaterQualityApp {
     }
 
     async loadComplianceMatrix() {
-        const station = document.getElementById('analysis-station')?.value;
-        const params  = new URLSearchParams({ limit: 10 });
-        if (station) params.set('station_id', station);
+        const station  = document.getElementById('analysis-station')?.value;
+        const standard = document.getElementById('analysis-standard')?.value || 'sans241';
+        const dateFrom = document.getElementById('analysis-from')?.value;
+        const dateTo   = document.getElementById('analysis-to')?.value;
+        const params   = new URLSearchParams({ limit: 10, standard });
+        if (station)  params.set('station_id', station);
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo)   params.set('date_to', dateTo);
 
         try {
             const res  = await this._fetch(`/api/wq/compliance?${params}`);
@@ -457,10 +476,13 @@ class WaterQualityApp {
                 if (!cell) {
                     return `<td class="px-0.5 py-0.5"><div class="matrix-cell no-data" title="No data"></div></td>`;
                 }
-                const cls = cell.compliant === null ? 'no-standard'
+                const cls = cell.not_assessed ? 'not-assessed'
+                          : cell.compliant === null ? 'no-standard'
                           : cell.compliant ? 'compliant'
                           : 'violation';
-                const tip = `${r.indicator.name}: ${cell.value !== null ? cell.value : '—'}${r.indicator.unit ? ' ' + r.indicator.unit : ''}${cell.flag ? ' [' + cell.flag + ']' : ''}`;
+                const tip = cell.not_assessed
+                    ? `${r.indicator.name}: not assessed under this standard (requires site-specific baseline data)`
+                    : `${r.indicator.name}: ${cell.value !== null ? cell.value : '—'}${r.indicator.unit ? ' ' + r.indicator.unit : ''}${cell.flag ? ' [' + cell.flag + ']' : ''}`;
                 return `<td class="px-0.5 py-0.5">
                     <div class="matrix-cell ${cls}"
                          data-tip="${this._esc(tip)}"
@@ -718,10 +740,16 @@ class WaterQualityApp {
         if (!ctx || !this._indicators.length) return;
         if (this._chartRadar) { this._chartRadar.destroy(); this._chartRadar = null; }
 
-        // Use the latest reading's first available measurement values, normalised by upper_std
-        const station = document.getElementById('analysis-station')?.value;
-        const params  = new URLSearchParams({ limit: 1 });
-        if (station) params.set('station_id', station);
+        // Use the latest reading's first available measurement values, normalised by upper_std.
+        // Defaults to the true latest reading; when a date range is set, restricts to the
+        // latest reading within that window (same filter bar as the trend chart/reading table).
+        const station  = document.getElementById('analysis-station')?.value;
+        const dateFrom = document.getElementById('analysis-from')?.value;
+        const dateTo   = document.getElementById('analysis-to')?.value;
+        const params   = new URLSearchParams({ limit: 1 });
+        if (station)  params.set('station_id', station);
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo)   params.set('date_to', dateTo);
 
         try {
             const res  = await this._fetch(`/api/wq/compliance?${params}`);
@@ -1633,6 +1661,402 @@ class WaterQualityApp {
                 </div>`).join('');
         } catch (e) {
             console.error('Alert log error', e);
+        }
+    }
+
+    // ── Water Safety Plan: Risk Register + Corrective Actions ────────────────
+
+    _populateRiskStationSelect() {
+        const sel = document.getElementById('risk-station-sel');
+        if (!sel) return;
+        sel.innerHTML = '<option value="">Org-wide hazard</option>' +
+            this._stations.map(s => `<option value="${s.id}">${this._esc(s.name)}</option>`).join('');
+    }
+
+    _riskBadge(score) {
+        if (score >= 15) return { label: 'Critical', cls: 'background:#fee2e2;color:#991b1b;' };
+        if (score >= 8)  return { label: 'High',     cls: 'background:#ffedd5;color:#9a3412;' };
+        if (score >= 4)  return { label: 'Medium',   cls: 'background:#fef9c3;color:#854d0e;' };
+        return                  { label: 'Low',      cls: 'background:#d1fae5;color:#065f46;' };
+    }
+
+    async loadRiskRegister() {
+        const list = document.getElementById('risk-register-list');
+        if (!list) return;
+        try {
+            const res  = await this._fetch('/api/wq/risk-register');
+            const data = await res.json();
+            if (!data.success || !(data.risks || []).length) {
+                list.innerHTML = '<p class="text-gray-400 text-xs text-center py-4">No risks logged yet. Click "Add Risk" to start your risk register.</p>';
+                return;
+            }
+            list.innerHTML = `
+                <table class="w-full text-xs">
+                    <thead><tr class="text-left text-gray-400 border-b border-gray-100">
+                        <th class="py-2 pr-2">Hazard</th><th class="py-2 pr-2">Risk</th>
+                        <th class="py-2 pr-2">Control Measure</th><th class="py-2 pr-2">Responsible</th>
+                        <th class="py-2 pr-2">Status</th><th class="py-2"></th>
+                    </tr></thead>
+                    <tbody>
+                        ${data.risks.map(r => {
+                            const badge = this._riskBadge(r.risk_score);
+                            return `<tr class="border-b border-gray-50">
+                                <td class="py-2 pr-2 font-medium text-gray-800">${this._esc(r.hazard_description)}</td>
+                                <td class="py-2 pr-2"><span class="px-2 py-0.5 rounded-full text-xs font-bold" style="${badge.cls}">${badge.label} (${r.risk_score})</span></td>
+                                <td class="py-2 pr-2 text-gray-500">${this._esc(r.control_measure || '—')}</td>
+                                <td class="py-2 pr-2 text-gray-500">${this._esc(r.responsible_person || '—')}</td>
+                                <td class="py-2 pr-2">
+                                    <select onchange="WQ.updateRiskStatus(${r.risk_id}, this.value)" class="border border-gray-200 rounded px-1 py-0.5 text-xs">
+                                        <option value="open" ${r.status==='open'?'selected':''}>Open</option>
+                                        <option value="mitigated" ${r.status==='mitigated'?'selected':''}>Mitigated</option>
+                                        <option value="closed" ${r.status==='closed'?'selected':''}>Closed</option>
+                                    </select>
+                                </td>
+                                <td class="py-2 text-right"><button onclick="WQ.deleteRisk(${r.risk_id})" class="text-gray-300 hover:text-red-500"><i class="fas fa-trash"></i></button></td>
+                            </tr>`;
+                        }).join('')}
+                    </tbody>
+                </table>`;
+        } catch (e) {
+            console.error('Risk register load error', e);
+        }
+    }
+
+    openRiskModal() {
+        document.getElementById('risk-form').reset();
+        document.getElementById('risk-form-msg').classList.add('hidden');
+        document.getElementById('risk-modal').style.display = 'flex';
+    }
+
+    closeRiskModal() {
+        document.getElementById('risk-modal').style.display = 'none';
+    }
+
+    async saveRisk(e) {
+        e.preventDefault();
+        const payload = {
+            hazard_description:   document.getElementById('risk-hazard').value.trim(),
+            hazard_source:        document.getElementById('risk-source').value.trim() || null,
+            station_id:           document.getElementById('risk-station-sel').value || null,
+            likelihood:           parseInt(document.getElementById('risk-likelihood').value, 10),
+            severity:             parseInt(document.getElementById('risk-severity').value, 10),
+            control_measure:      document.getElementById('risk-control').value.trim() || null,
+            monitoring_frequency: document.getElementById('risk-freq').value.trim() || null,
+            responsible_person:   document.getElementById('risk-responsible').value.trim() || null,
+        };
+        const msg = document.getElementById('risk-form-msg');
+        try {
+            const res  = await this._fetch('/api/wq/risk-register', { method: 'POST', body: JSON.stringify(payload) });
+            const data = await res.json();
+            if (data.success) {
+                this.closeRiskModal();
+                await this.loadRiskRegister();
+            } else {
+                msg.textContent = data.error || 'Failed to save risk.';
+                msg.className = 'text-xs font-semibold text-red-500';
+            }
+        } catch (err) {
+            msg.textContent = 'Network error: ' + err.message;
+            msg.className = 'text-xs font-semibold text-red-500';
+        }
+    }
+
+    async updateRiskStatus(riskId, status) {
+        try {
+            await this._fetch(`/api/wq/risk-register/${riskId}`, { method: 'PUT', body: JSON.stringify({ status }) });
+            await this.loadRiskRegister();
+        } catch (e) { alert('Network error.'); }
+    }
+
+    async deleteRisk(riskId) {
+        if (!confirm('Delete this risk entry?')) return;
+        try {
+            const res  = await this._fetch(`/api/wq/risk-register/${riskId}`, { method: 'DELETE' });
+            const data = await res.json();
+            if (data.success) await this.loadRiskRegister();
+            else alert(data.error || 'Could not delete.');
+        } catch (e) { alert('Network error.'); }
+    }
+
+    async loadCorrectiveActions() {
+        const list   = document.getElementById('capa-list');
+        const status = document.getElementById('capa-status-filter')?.value;
+        if (!list) return;
+        const params = new URLSearchParams();
+        if (status) params.set('status', status);
+        try {
+            const res  = await this._fetch(`/api/wq/corrective-actions?${params}`);
+            const data = await res.json();
+            if (!data.success || !(data.actions || []).length) {
+                list.innerHTML = '<p class="text-gray-400 text-xs text-center py-4">No corrective actions logged.</p>';
+                return;
+            }
+            const statusColors = {
+                open: 'background:#fee2e2;color:#991b1b;', in_progress: 'background:#fef9c3;color:#854d0e;',
+                closed: 'background:#d1fae5;color:#065f46;', overdue: 'background:#fecaca;color:#7f1d1d;',
+            };
+            list.innerHTML = `
+                <table class="w-full text-xs">
+                    <thead><tr class="text-left text-gray-400 border-b border-gray-100">
+                        <th class="py-2 pr-2">Description</th><th class="py-2 pr-2">Assigned To</th>
+                        <th class="py-2 pr-2">Due</th><th class="py-2 pr-2">Status</th><th class="py-2">Source</th>
+                    </tr></thead>
+                    <tbody>
+                        ${data.actions.map(a => `
+                            <tr class="border-b border-gray-50">
+                                <td class="py-2 pr-2 text-gray-700">${this._esc(a.description)}</td>
+                                <td class="py-2 pr-2 text-gray-500">${this._esc(a.assigned_to || '—')}</td>
+                                <td class="py-2 pr-2 text-gray-500">${a.due_date || '—'}</td>
+                                <td class="py-2 pr-2">
+                                    <select onchange="WQ.updateActionStatus(${a.action_id}, this.value)" class="border border-gray-200 rounded px-1 py-0.5 text-xs" style="${statusColors[a.status] || ''}">
+                                        <option value="open" ${a.status==='open'?'selected':''}>Open</option>
+                                        <option value="in_progress" ${a.status==='in_progress'?'selected':''}>In Progress</option>
+                                        <option value="closed" ${a.status==='closed'?'selected':''}>Closed</option>
+                                        <option value="overdue" ${a.status==='overdue'?'selected':''}>Overdue</option>
+                                    </select>
+                                </td>
+                                <td class="py-2 text-gray-400">${a.auto_generated ? '<i class="fas fa-robot" title="Auto-generated from a compliance violation"></i>' : 'Manual'}</td>
+                            </tr>`).join('')}
+                    </tbody>
+                </table>`;
+        } catch (e) {
+            console.error('Corrective actions load error', e);
+        }
+    }
+
+    async updateActionStatus(actionId, status) {
+        try {
+            await this._fetch(`/api/wq/corrective-actions/${actionId}`, { method: 'PUT', body: JSON.stringify({ status }) });
+            await this.loadCorrectiveActions();
+        } catch (e) { alert('Network error.'); }
+    }
+
+    async exportWSP() {
+        try {
+            const res = await this._fetch('/api/wq/wsp/export');
+            if (!res.ok) { alert('Export failed.'); return; }
+            const blob = await res.blob();
+            const url  = URL.createObjectURL(blob);
+            const a    = document.createElement('a');
+            a.href = url; a.download = 'water_safety_plan_export.xlsx';
+            document.body.appendChild(a); a.click();
+            document.body.removeChild(a);
+            URL.revokeObjectURL(url);
+        } catch (e) {
+            alert('Network error: ' + e.message);
+        }
+    }
+
+    // ── Diagnostics ───────────────────────────────────────────────────────────
+
+    _populateDiagnosticsStationSelect() {
+        const sel = document.getElementById('diag-station');
+        if (!sel) return;
+        const current = sel.value;
+        sel.innerHTML = '<option value="">Select station…</option>' +
+            this._stations.map(s => `<option value="${s.id}">${this._esc(s.name)}</option>`).join('');
+        if (current) sel.value = current;
+    }
+
+    async loadDiagnosticsTab() {
+        const station  = document.getElementById('diag-station')?.value;
+        const dateFrom = document.getElementById('diag-from')?.value;
+        const dateTo   = document.getElementById('diag-to')?.value;
+        if (!station) {
+            alert('Please select a station first.'); return;
+        }
+        await Promise.all([
+            this.loadDiagnostics(station, dateFrom, dateTo),
+            this.loadMultiUseCompliance(station, dateFrom, dateTo),
+            this.loadEcosystemHealth(station, dateFrom, dateTo),
+        ]);
+    }
+
+    _confidenceBadge(pct) {
+        if (pct >= 70) return { label: 'High confidence', cls: 'background:#fee2e2;color:#991b1b;' };
+        if (pct >= 40) return { label: 'Moderate confidence', cls: 'background:#ffedd5;color:#9a3412;' };
+        return { label: 'Low confidence', cls: 'background:#f1f5f9;color:#475569;' };
+    }
+
+    async loadDiagnostics(station, dateFrom, dateTo) {
+        const panel = document.getElementById('diag-findings-panel');
+        if (!panel) return;
+        const params = new URLSearchParams({ station_id: station });
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo)   params.set('date_to', dateTo);
+        try {
+            const res  = await this._fetch(`/api/wq/diagnostics?${params}`);
+            const data = await res.json();
+            this.renderDiagnosticFindings(data.findings || []);
+        } catch (e) {
+            console.error('Diagnostics error', e);
+            panel.innerHTML = '<p class="text-rose-500 text-xs text-center py-6">Failed to load diagnostic findings.</p>';
+        }
+    }
+
+    renderDiagnosticFindings(findings) {
+        const panel = document.getElementById('diag-findings-panel');
+        if (!panel) return;
+        if (!findings.length) {
+            panel.innerHTML = '<p class="text-gray-400 text-xs text-center py-6">No contamination-source findings for this station/date range — either no evaluable signals were present, or nothing crossed the 15% confidence floor.</p>';
+            return;
+        }
+        panel.innerHTML = findings.map(f => {
+            const badge = this._confidenceBadge(f.confidence_pct);
+            const signalsHtml = (f.matched_signals || []).map(s => `
+                <div class="flex justify-between text-xs py-1 border-b border-gray-50 last:border-0">
+                    <span class="text-gray-600">${this._esc(s.signal)}</span>
+                    <span class="text-gray-400 text-right" style="max-width:60%;">${this._esc(s.detail || '')}</span>
+                </div>`).join('');
+            const modifiersHtml = (f.contextual_modifiers || []).length ? `
+                <div class="mt-2 pt-2 border-t border-gray-50 text-xs text-cyan-700">
+                    <i class="fas fa-map-marker-alt mr-1"></i>
+                    ${(f.contextual_modifiers || []).map(m => this._esc(m.detail || '')).join(' ')}
+                </div>` : '';
+            return `
+                <div class="p-3 rounded-xl mb-3 last:mb-0" style="background:#f8fafc;border:1px solid #f1f5f9;">
+                    <div class="flex items-center justify-between mb-1">
+                        <div class="text-sm font-bold text-gray-800">${this._esc(f.source_label)}</div>
+                        <span class="px-2 py-0.5 rounded-full text-xs font-bold" style="${badge.cls}">${f.confidence_pct}% · ${badge.label}</span>
+                    </div>
+                    <div class="text-xs text-gray-400 mb-2">${this._esc(f.station)} · ${f.date}</div>
+                    <div class="text-xs text-gray-600 mb-2">${this._esc(f.explanation_text || '')}</div>
+                    <details class="text-xs">
+                        <summary class="text-gray-400 cursor-pointer select-none">Matched signals (${(f.matched_signals || []).length})</summary>
+                        <div class="mt-1">${signalsHtml}</div>
+                    </details>
+                    ${modifiersHtml}
+                </div>`;
+        }).join('');
+    }
+
+    async loadMultiUseCompliance(station, dateFrom, dateTo) {
+        const params = new URLSearchParams({ station_id: station });
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo)   params.set('date_to', dateTo);
+        try {
+            const res  = await this._fetch(`/api/wq/analytics/multi-use-compliance?${params}`);
+            const data = await res.json();
+            if (!data.success) return;
+            this.renderIrrigationPanel(data.irrigation || []);
+            this.renderLivestockPanel(data.livestock || []);
+            this.renderAquaculturePanel(data.aquaculture || []);
+        } catch (e) {
+            console.error('Multi-use compliance error', e);
+        }
+    }
+
+    renderIrrigationPanel(rows) {
+        const panel = document.getElementById('fitness-irrigation-panel');
+        if (!panel) return;
+        if (!rows.length) {
+            panel.innerHTML = '<p class="text-gray-400 text-xs py-4">No readings available.</p>';
+            return;
+        }
+        const latest = rows[rows.length - 1];
+        const restrictionCls = latest.overall_restriction_class === 'severe' ? 'text-rose-600'
+                              : latest.overall_restriction_class === 'slight_moderate' ? 'text-amber-600'
+                              : 'text-teal-600';
+        panel.innerHTML = `
+            <div class="text-xs text-gray-400 mb-2">${latest.date}</div>
+            <div class="p-2 rounded-lg mb-2" style="background:#f8fafc;">
+                <div class="flex justify-between text-xs mb-0.5"><span class="text-gray-500">SAR</span><span class="font-bold text-gray-700">${latest.sar_result.sar ?? '—'}</span></div>
+                <div class="text-xs text-gray-400">${this._esc(latest.sar_class.effect_description)}</div>
+            </div>
+            <div class="p-2 rounded-lg" style="background:#f8fafc;">
+                <div class="flex justify-between text-xs mb-0.5"><span class="text-gray-500">EC band</span><span class="font-bold text-gray-700">${this._esc(latest.ec_class.band || '—')}</span></div>
+                <div class="text-xs text-gray-400">${this._esc(latest.ec_class.management_note)}</div>
+            </div>
+            <div class="mt-2 text-xs font-bold ${restrictionCls}">Overall: ${latest.overall_restriction_class.replace('_', '/')}</div>
+        `;
+    }
+
+    renderLivestockPanel(rows) {
+        const panel = document.getElementById('fitness-livestock-panel');
+        if (!panel) return;
+        if (!rows.length) {
+            panel.innerHTML = '<p class="text-gray-400 text-xs py-4">No readings available.</p>';
+            return;
+        }
+        const latest = rows[rows.length - 1];
+        const species = Object.entries(latest.by_species || {});
+        if (!species.length) {
+            panel.innerHTML = `<div class="text-xs text-gray-400 mb-2">${latest.date}</div><p class="text-gray-400 text-xs py-2">No TDS reading available for this date.</p>`;
+            return;
+        }
+        const sevColor = r => r === 0 ? '#0d9488' : r === 1 ? '#84cc16' : r === 2 ? '#f59e0b' : r === 3 ? '#f97316' : '#dc2626';
+        panel.innerHTML = `
+            <div class="text-xs text-gray-400 mb-2">${latest.date}</div>
+            ${species.map(([sp, v]) => `
+                <div class="flex items-center justify-between text-xs py-1 border-b border-gray-50 last:border-0">
+                    <span class="text-gray-600">${this._esc(sp)}</span>
+                    <span class="w-3 h-3 rounded-full inline-block" style="background:${sevColor(v.severity_rating)};" title="${this._esc(v.band_label)}"></span>
+                </div>`).join('')}
+            <div class="mt-2 text-xs text-gray-500">Most restrictive: <span class="font-bold">${this._esc(latest.most_restrictive_species || '—')}</span></div>
+        `;
+    }
+
+    renderAquaculturePanel(rows) {
+        const panel = document.getElementById('fitness-aquaculture-panel');
+        if (!panel) return;
+        if (!rows.length) {
+            panel.innerHTML = '<p class="text-gray-400 text-xs py-4">No readings available.</p>';
+            return;
+        }
+        const latest = rows[rows.length - 1];
+        const flagCls = latest.overall_flag === 'suitable' ? 'text-teal-600'
+                       : latest.overall_flag === 'caution' ? 'text-amber-600' : 'text-rose-600';
+        const violations = (latest.per_indicator || []).filter(p => p.status !== 'within');
+        panel.innerHTML = `
+            <div class="text-xs text-gray-400 mb-2">${latest.date} · hardness: ${this._esc(latest.hardness_class)}</div>
+            <div class="text-xs font-bold ${flagCls} mb-2">Overall: ${latest.overall_flag}</div>
+            ${violations.length ? violations.map(p => `
+                <div class="flex justify-between text-xs py-1 border-b border-gray-50 last:border-0">
+                    <span class="text-gray-600">${this._esc(p.indicator_code)}</span>
+                    <span class="text-rose-500 font-semibold">${p.measured_val} ${this._esc(p.unit || '')} (${p.status})</span>
+                </div>`).join('') : '<p class="text-gray-400 text-xs py-1">No DWAF Vol 6 threshold exceedances.</p>'}
+        `;
+    }
+
+    async loadEcosystemHealth(station, dateFrom, dateTo) {
+        const params = new URLSearchParams({ station_id: station });
+        if (dateFrom) params.set('date_from', dateFrom);
+        if (dateTo)   params.set('date_to', dateTo);
+        try {
+            const res  = await this._fetch(`/api/wq/analytics/ecosystem-health?${params}`);
+            const data = await res.json();
+            if (!data.success) return;
+            this.renderEcosystemHealthGauge(data.ecosystem_health);
+        } catch (e) {
+            console.error('Ecosystem health error', e);
+        }
+    }
+
+    renderEcosystemHealthGauge(eco) {
+        if (!eco || eco.overall_score === null) {
+            this._setText('eco-grade', 'Insufficient data');
+            this._setText('eco-sub', 'Need TWQR-assessed measurements');
+            this._setText('eco-score-txt', '—');
+            return;
+        }
+        const ring = document.getElementById('eco-ring-fill');
+        if (ring) {
+            const circumference = 239;
+            ring.setAttribute('stroke-dashoffset', String(Math.round(circumference - circumference * eco.overall_score / 100)));
+            ring.setAttribute('stroke', eco.achieves_target ? '#0891b2' : eco.overall_score >= 50 ? '#f59e0b' : '#dc2626');
+        }
+        this._setText('eco-score-txt', eco.overall_score);
+        this._setText('eco-grade', eco.grade);
+        this._setText('eco-sub', `${eco.n_variables} variable(s) assessed`);
+        const breakEl = document.getElementById('eco-breakdown');
+        if (breakEl && eco.breakdown) {
+            breakEl.innerHTML = eco.breakdown.map(b => `
+                <div class="flex justify-between items-center py-0.5">
+                    <span class="text-gray-500">${this._esc(b.indicator_name || b.indicator_code)} <span class="text-gray-300">(${b.measured_val})</span></span>
+                    <span class="font-semibold ${b.score >= 90 ? 'text-teal-600' : b.score >= 50 ? 'text-amber-600' : 'text-rose-500'}">
+                        ${b.score}%
+                    </span>
+                </div>`).join('');
         }
     }
 

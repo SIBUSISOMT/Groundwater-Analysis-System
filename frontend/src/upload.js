@@ -31,8 +31,101 @@ class UploadDashboard {
             this._applyBasicPlanMode();
             return;
         }
+        await this.loadCatchments();
         await this.loadDataSources();
         this.showToast('Upload dashboard ready', 'success');
+    }
+
+    _esc(str) {
+        return String(str == null ? '' : str)
+            .replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+    }
+
+    // ── Catchments / Sub Areas (tenant-registered) ───────────────────────────
+
+    async loadCatchments(selectName) {
+        try {
+            const res  = await fetch(`${this.apiBase}/catchments/manage`);
+            const data = await res.json();
+            const catchments = (data.success && data.catchments) || [];
+
+            const catchSel = document.getElementById('catchmentSelect');
+            if (catchSel) {
+                catchSel.innerHTML = '<option value="">Select Catchment</option>' +
+                    catchments.map(c => `<option value="${this._esc(c.name)}" data-id="${c.id}">${this._esc(c.name)}</option>`).join('') +
+                    '<option value="__new__">+ Register new catchment…</option>';
+                if (selectName) catchSel.value = selectName;
+            }
+
+            const tplSel = document.getElementById('tplACatch');
+            if (tplSel) {
+                tplSel.innerHTML = '<option value="">Select catchment…</option>' +
+                    catchments.map(c => `<option value="${this._esc(c.name)}">${this._esc(c.name)}</option>`).join('');
+            }
+        } catch (err) {
+            console.error('Failed to load catchments', err);
+        }
+    }
+
+    async loadSubAreas(catchmentId, selectName) {
+        const subSel = document.getElementById('subAreaSelect');
+        if (!subSel) return;
+        if (!catchmentId) {
+            subSel.innerHTML = '<option value="">Select a catchment first</option>';
+            subSel.disabled = true;
+            return;
+        }
+        try {
+            const res  = await fetch(`${this.apiBase}/sub-areas?catchment_id=${catchmentId}`);
+            const data = await res.json();
+            const subAreas = (data.success && data.sub_areas) || [];
+            subSel.disabled = false;
+            subSel.innerHTML = '<option value="">Select Sub Area</option>' +
+                subAreas.map(s => `<option value="${this._esc(s.name)}">${this._esc(s.name)}</option>`).join('') +
+                '<option value="__new__">+ Register new sub area…</option>';
+            if (selectName) subSel.value = selectName;
+        } catch (err) {
+            console.error('Failed to load sub areas', err);
+        }
+    }
+
+    async _promptRegisterCatchment() {
+        const name = window.prompt('New catchment name:');
+        if (!name || !name.trim()) { document.getElementById('catchmentSelect').value = ''; return; }
+        try {
+            const res  = await fetch(`${this.apiBase}/catchments`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ catchment_name: name.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to register catchment');
+            this.showToast(`Catchment "${name.trim()}" registered.`, 'success');
+            await this.loadCatchments(name.trim());
+            await this.loadSubAreas(null);
+        } catch (err) {
+            this.showToast(`Could not register catchment: ${err.message}`, 'error');
+            document.getElementById('catchmentSelect').value = '';
+        }
+    }
+
+    async _promptRegisterSubArea(catchmentId) {
+        const subSel = document.getElementById('subAreaSelect');
+        const name = window.prompt('New sub area name:');
+        if (!name || !name.trim()) { if (subSel) subSel.value = ''; return; }
+        try {
+            const res  = await fetch(`${this.apiBase}/sub-areas`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ catchment_id: catchmentId, name: name.trim() }),
+            });
+            const data = await res.json();
+            if (!res.ok) throw new Error(data.error || 'Failed to register sub area');
+            this.showToast(`Sub area "${name.trim()}" registered.`, 'success');
+            await this.loadSubAreas(catchmentId, name.trim());
+        } catch (err) {
+            this.showToast(`Could not register sub area: ${err.message}`, 'error');
+            if (subSel) subSel.value = '';
+        }
     }
 
     // ── Basic plan mode ──────────────────────────────────────────────────────
@@ -111,6 +204,27 @@ class UploadDashboard {
         scenarioBtns.forEach(btn => {
             btn.addEventListener('click', () => this._setScenario(btn.dataset.scenario));
         });
+
+        // Catchment -> Sub Area cascade
+        const catchSel = document.getElementById('catchmentSelect');
+        if (catchSel) {
+            catchSel.addEventListener('change', () => {
+                if (catchSel.value === '__new__') { this._promptRegisterCatchment(); return; }
+                const opt = catchSel.selectedOptions[0];
+                const catchmentId = opt ? opt.dataset.id : null;
+                this.loadSubAreas(catchmentId || null);
+            });
+        }
+        const subSel = document.getElementById('subAreaSelect');
+        if (subSel) {
+            subSel.addEventListener('change', () => {
+                if (subSel.value === '__new__') {
+                    const opt = catchSel ? catchSel.selectedOptions[0] : null;
+                    const catchmentId = opt ? opt.dataset.id : null;
+                    this._promptRegisterSubArea(catchmentId);
+                }
+            });
+        }
 
         const dropZone  = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
@@ -225,14 +339,16 @@ class UploadDashboard {
     // ── File upload ──────────────────────────────────────────────────────────
 
     async handleFileUpload(file) {
-        const scenario     = this._scenario || 'single';
-        const category     = (document.getElementById('categorySelect') || {}).value || '';
-        const subcatchment = (document.getElementById('subcatchmentSelect') || {}).value || '';
+        const scenario  = this._scenario || 'single';
+        const category  = (document.getElementById('categorySelect') || {}).value || '';
+        const catchment = (document.getElementById('catchmentSelect') || {}).value || '';
+        const subArea   = (document.getElementById('subAreaSelect')   || {}).value || '';
 
         // Validate inputs per scenario
         if (scenario === 'single') {
-            if (!category)     { this.showToast('Please select a category', 'error'); return; }
-            if (!subcatchment) { this.showToast('Please select a subcatchment', 'error'); return; }
+            if (!category)  { this.showToast('Please select a category', 'error'); return; }
+            if (!catchment || catchment === '__new__') { this.showToast('Please select a catchment', 'error'); return; }
+            if (!subArea || subArea === '__new__')     { this.showToast('Please select a sub area', 'error'); return; }
         } else if (scenario === 'parameter') {
             if (!category) { this.showToast('Please select a category for Scenario B', 'error'); return; }
         }
@@ -255,7 +371,8 @@ class UploadDashboard {
             let endpoint;
             if (scenario === 'single') {
                 fd.append('category', category);
-                fd.append('subcatchment', subcatchment);
+                fd.append('catchment', catchment);
+                fd.append('sub_area', subArea);
                 endpoint = `${this.apiBase}/upload`;
             } else {
                 fd.append('mode', scenario);
@@ -289,8 +406,9 @@ class UploadDashboard {
 
             document.getElementById('fileInput').value = '';
             if (scenario === 'single') {
-                document.getElementById('categorySelect').value     = '';
-                document.getElementById('subcatchmentSelect').value = '';
+                document.getElementById('categorySelect').value = '';
+                document.getElementById('catchmentSelect').value = '';
+                this.loadSubAreas(null);
             }
             const dz = document.getElementById('dropZone');
             if (dz) { const p = dz.querySelector('p'); if (p) p.textContent = 'Click or drag Excel file here'; }
