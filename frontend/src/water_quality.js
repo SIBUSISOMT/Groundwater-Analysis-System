@@ -17,6 +17,10 @@ class WaterQualityApp {
         this._chartEC       = null;
         this._chartTrend    = null;
         this._chartRadar    = null;
+        this._radarReqSeq   = 0;  // guards against overlapping _buildRadarChart() calls racing on the same canvas
+        this._trendReqSeq   = 0;  // same guard for loadTrend()/_buildTrendChart()
+        this._matrixReqSeq  = 0;  // same guard for loadComplianceMatrix()
+        this._readingsReqSeq = 0; // same guard for loadReadings() (rapid Prev/Next clicks)
         this._leafletMap    = null;
         this._markers       = [];
         this._tooltip       = document.getElementById('wq-tooltip');
@@ -78,6 +82,7 @@ class WaterQualityApp {
         }
         if (tab === 'analytics') {
             this._populateAnalyticsSelects();
+            this.loadAnalytics();
         }
         if (tab === 'alerts') {
             this._populateAlertSelects();
@@ -91,6 +96,7 @@ class WaterQualityApp {
         }
         if (tab === 'diagnostics') {
             this._populateDiagnosticsStationSelect();
+            this.loadDiagnosticsTab();
         }
     }
 
@@ -436,7 +442,15 @@ class WaterQualityApp {
         this.loadTrend();
     }
 
+    onStandardChange() {
+        // The Standard toggle sits on the same filter bar as the radar snapshot, so both
+        // must refresh together — previously only the matrix listened for this change.
+        this.loadComplianceMatrix();
+        this._buildRadarChart();
+    }
+
     async loadComplianceMatrix() {
+        const myReq    = ++this._matrixReqSeq;
         const station  = document.getElementById('analysis-station')?.value;
         const standard = document.getElementById('analysis-standard')?.value || 'sans241';
         const dateFrom = document.getElementById('analysis-from')?.value;
@@ -449,6 +463,7 @@ class WaterQualityApp {
         try {
             const res  = await this._fetch(`/api/wq/compliance?${params}`);
             const data = await res.json();
+            if (myReq !== this._matrixReqSeq) return;
             if (!data.success) return;
             this._renderMatrix(data.cols || [], data.rows || []);
         } catch (e) {
@@ -511,6 +526,7 @@ class WaterQualityApp {
     }
 
     async loadReadings() {
+        const myReq    = ++this._readingsReqSeq;
         const station  = document.getElementById('analysis-station')?.value;
         const dateFrom = document.getElementById('analysis-from')?.value;
         const dateTo   = document.getElementById('analysis-to')?.value;
@@ -522,6 +538,7 @@ class WaterQualityApp {
         try {
             const res  = await this._fetch(`/api/wq/readings?${params}`);
             const data = await res.json();
+            if (myReq !== this._readingsReqSeq) return;
             if (!data.success) return;
             this._readingsTotal = data.total || 0;
             this._renderReadingsTable(data.readings || []);
@@ -650,6 +667,7 @@ class WaterQualityApp {
     // ── Trend chart ───────────────────────────────────────────────────────────
 
     async loadTrend() {
+        const myReq = ++this._trendReqSeq;
         const station   = document.getElementById('analysis-station')?.value;
         const indicator = document.getElementById('analysis-indicator')?.value || 'EC';
         const dateFrom  = document.getElementById('analysis-from')?.value;
@@ -663,6 +681,9 @@ class WaterQualityApp {
         try {
             const res  = await this._fetch(`/api/wq/trend?${params}`);
             const data = await res.json();
+            // Drop stale responses from a filter change that's since been superseded —
+            // otherwise an out-of-order network reply can silently render outdated data.
+            if (myReq !== this._trendReqSeq) return;
             if (!data.success) return;
 
             const subtitle = document.getElementById('trend-subtitle');
@@ -738,22 +759,39 @@ class WaterQualityApp {
     async _buildRadarChart() {
         const ctx = document.getElementById('chart-radar');
         if (!ctx || !this._indicators.length) return;
-        if (this._chartRadar) { this._chartRadar.destroy(); this._chartRadar = null; }
 
-        // Use the latest reading's first available measurement values, normalised by upper_std.
-        // Defaults to the true latest reading; when a date range is set, restricts to the
-        // latest reading within that window (same filter bar as the trend chart/reading table).
+        // Station/standard/date/indicator can all trigger this within the same tick (e.g.
+        // onStandardChange + loadTrend's own call both fire it). Without this guard, two
+        // overlapping calls can both pass the "nothing to destroy yet" check before either
+        // has created its chart, then both try to bind a new Chart.js instance to the same
+        // canvas — Chart.js throws "Canvas is already in use" (confirmed live in testing).
+        const myReq = ++this._radarReqSeq;
+
+        // Use the latest reading's first available measurement values, normalised by the
+        // CURRENTLY SELECTED standard's upper limit (SANS upper_std, or TWQR twqr_upper) —
+        // keeps this chart consistent with the Compliance Matrix's standard toggle, which
+        // sits on the same filter bar. Defaults to the true latest reading; when a date
+        // range is set, restricts to the latest reading within that window.
         const station  = document.getElementById('analysis-station')?.value;
+        const standard = document.getElementById('analysis-standard')?.value || 'sans241';
         const dateFrom = document.getElementById('analysis-from')?.value;
         const dateTo   = document.getElementById('analysis-to')?.value;
-        const params   = new URLSearchParams({ limit: 1 });
+        const params   = new URLSearchParams({ limit: 1, standard });
         if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
 
+        this._setText('radar-subtitle', standard === 'twqr'
+            ? 'Normalised % of TWQR upper limit (DWAF Vol 7)'
+            : 'Normalised % of SANS 241 upper limit');
+
         try {
             const res  = await this._fetch(`/api/wq/compliance?${params}`);
             const data = await res.json();
+            // A newer call has started since we began awaiting — drop this stale response
+            // rather than let it clobber (or race to create a chart alongside) the result
+            // of a filter change the user made after this one.
+            if (myReq !== this._radarReqSeq) return;
             if (!data.success || !data.rows.length) return;
 
             const col0 = 0;
@@ -763,16 +801,33 @@ class WaterQualityApp {
 
             data.rows.forEach(row => {
                 const cell = row.cells[col0];
-                if (!cell || cell.value === null) return;
+                if (!cell || cell.value === null || cell.not_assessed) return;
                 const ind = this._indicators.find(i => i.code === row.indicator.code);
-                if (!ind || !ind.upper_std) return;
+                if (!ind) return;
+                const upperLimit = standard === 'twqr' ? ind.twqr_upper : ind.upper_std;
+                // Use an explicit null/undefined check, NOT a falsy check — some real
+                // SANS 241 limits are legitimately 0 (e.g. E. coli/Total Coliform's
+                // zero-tolerance requirement), and `!upperLimit` would silently drop
+                // those safety-critical indicators from the chart entirely.
+                if (upperLimit === null || upperLimit === undefined) return;
                 labels.push(row.indicator.code);
-                const pct = Math.min((cell.value / ind.upper_std) * 100, 150);
+                // A zero-tolerance limit can't be expressed as "% of limit" (division
+                // by zero) — represent it as a binary full-scale violation (150%) on
+                // any detection, or fully compliant (0%) otherwise.
+                const pct = upperLimit > 0
+                    ? Math.min((cell.value / upperLimit) * 100, 150)
+                    : (cell.value > 0 ? 150 : 0);
                 values.push(pct);
                 colors.push(cell.compliant === false ? 'rgba(244,63,94,.7)' : 'rgba(13,148,136,.7)');
             });
 
             if (!labels.length) return;
+
+            // Destroy whatever chart is actually bound to this canvas right now (via Chart.js's
+            // own registry, not just our own possibly-stale `this._chartRadar` reference) —
+            // the defensive check that actually prevents the "already in use" crash.
+            const existing = Chart.getChart(ctx);
+            if (existing) existing.destroy();
 
             this._chartRadar = new Chart(ctx, {
                 type: 'radar',
@@ -962,11 +1017,11 @@ class WaterQualityApp {
         ['ana-station', 'alert-station-sel'].forEach(id => {
             const sel = document.getElementById(id);
             if (!sel) return;
-            const firstOpt = id === 'alert-station-sel' ? '<option value="">All stations</option>'
-                                                         : '<option value="">Select station…</option>';
-            sel.innerHTML = firstOpt + this._stations.map(s =>
+            const current = sel.value;
+            sel.innerHTML = '<option value="">All stations</option>' + this._stations.map(s =>
                 `<option value="${s.id}">${this._esc(s.name)}</option>`
             ).join('');
+            if (current) sel.value = current;
         });
     }
 
@@ -986,28 +1041,35 @@ class WaterQualityApp {
         const dateTo    = document.getElementById('ana-to')?.value;
         const indicator = document.getElementById('ana-indicator')?.value || 'EC';
 
-        if (!station) {
-            alert('Please select a station first.'); return;
-        }
+        // Mann-Kendall, LSI and Pollution Load are single-station time-series stats —
+        // combining multiple rivers into one trend line would be scientifically
+        // meaningless. When "All stations" is selected, these three fall back to the
+        // first available station rather than showing nothing until the user picks
+        // one explicitly; every other widget below shows real org-wide data by
+        // default and only narrows when a specific station is chosen.
+        const trendStation = station || (this._stations[0]?.id ?? '');
+        const autoSelected = !station && !!trendStation;
+        const trendStationName = this._stations.find(s => String(s.id) === String(trendStation))?.name || '';
 
         await Promise.all([
             this._loadWQI(station, dateFrom, dateTo),
             this._loadBlueDrop(dateFrom, dateTo),
-            this._loadMannKendall(station, indicator, dateFrom, dateTo),
-            this._loadLSI(station, dateFrom, dateTo),
+            this._loadMannKendall(trendStation, indicator, dateFrom, dateTo, trendStationName, autoSelected),
+            this._loadLSI(trendStation, dateFrom, dateTo, trendStationName, autoSelected),
             this._loadPiper(station, dateFrom, dateTo),
             this._loadStiff(station, dateFrom, dateTo),
             this._loadEutrophication(station, dateFrom, dateTo),
             this._loadAMD(station, dateFrom, dateTo),
             this._loadSeasonal(station, dateFrom, dateTo),
-            this._loadPollutionLoad(station, indicator, dateFrom, dateTo),
+            this._loadPollutionLoad(trendStation, indicator, dateFrom, dateTo, trendStationName, autoSelected),
         ]);
     }
 
     // ── WQI ──────────────────────────────────────────────────────────────────
 
     async _loadWQI(station, dateFrom, dateTo) {
-        const params = new URLSearchParams({ station_id: station });
+        const params = new URLSearchParams();
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
@@ -1079,7 +1141,7 @@ class WaterQualityApp {
 
     // ── Mann-Kendall ──────────────────────────────────────────────────────────
 
-    async _loadMannKendall(station, indicator, dateFrom, dateTo) {
+    async _loadMannKendall(station, indicator, dateFrom, dateTo, stationName = '', autoSelected = false) {
         const params = new URLSearchParams({ station_id: station, indicator });
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
@@ -1097,7 +1159,11 @@ class WaterQualityApp {
             const icon = trendLower.includes('increasing') ? 'arrow-up'
                        : trendLower.includes('decreasing') ? 'arrow-down'
                        : 'minus';
-            panel.innerHTML = mk.n < 4 ? `<p class="text-gray-400 text-xs text-center py-4">Insufficient data (n=${mk.n}, need ≥ 4).</p>` : `
+            const autoNote = autoSelected && stationName
+                ? `<div class="text-xs text-cyan-700 mb-2"><i class="fas fa-map-marker-alt mr-1"></i>Showing ${this._esc(stationName)} — pick a station above to switch (trends can't be combined across rivers).</div>`
+                : '';
+            panel.innerHTML = mk.n < 4 ? `${autoNote}<p class="text-gray-400 text-xs text-center py-4">Insufficient data (n=${mk.n}, need ≥ 4).</p>` : `
+                ${autoNote}
                 <div class="flex items-center justify-between mb-4">
                     <span class="mk-trend-badge ${badgeCls}">
                         <i class="fas fa-${icon}"></i> ${mk.trend}
@@ -1131,25 +1197,32 @@ class WaterQualityApp {
     // ── LSI / RSI ─────────────────────────────────────────────────────────────
 
     _chartLSI = null;
+    _lsiReqSeq = 0;
 
-    async _loadLSI(station, dateFrom, dateTo) {
+    async _loadLSI(station, dateFrom, dateTo, stationName = '', autoSelected = false) {
+        const myReq = ++this._lsiReqSeq;
         const params = new URLSearchParams({ station_id: station });
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
             const res  = await this._fetch(`/api/wq/analytics/lsi?${params}`);
             const data = await res.json();
+            if (myReq !== this._lsiReqSeq) return;
             if (!data.success) return;
             const series = data.lsi_series.filter(r => r.LSI !== undefined && r.LSI !== null);
             const panel  = document.getElementById('lsi-panel');
+            const autoNote = autoSelected && stationName
+                ? `<div class="text-xs text-cyan-700 mb-2"><i class="fas fa-map-marker-alt mr-1"></i>Showing ${this._esc(stationName)} — pick a station above to switch.</div>`
+                : '';
             if (!series.length) {
-                if (panel) panel.innerHTML = '<p class="text-gray-400 text-xs text-center py-4">Requires pH, TDS/EC, Ca, and Alkalinity measurements.</p>';
+                if (panel) panel.innerHTML = `${autoNote}<p class="text-gray-400 text-xs text-center py-4">Requires pH, TDS/EC, Ca, and Alkalinity measurements.</p>`;
                 return;
             }
             const latest = series[series.length - 1];
             if (panel) {
                 const lsiColor = latest.LSI > 0.5 ? '#0d9488' : latest.LSI > 0 ? '#f59e0b' : latest.LSI < -0.5 ? '#ef4444' : '#64748b';
                 panel.innerHTML = `
+                    ${autoNote}
                     <div class="grid grid-cols-2 gap-3 mb-3">
                         <div class="p-3 rounded-xl bg-gray-50 text-center">
                             <div class="text-xs text-gray-400 mb-1">Latest LSI</div>
@@ -1177,7 +1250,8 @@ class WaterQualityApp {
             // Chart
             const ctx = document.getElementById('chart-lsi-trend');
             if (ctx) {
-                if (this._chartLSI) { this._chartLSI.destroy(); this._chartLSI = null; }
+                const existing = Chart.getChart(ctx);
+                if (existing) existing.destroy();
                 this._chartLSI = new Chart(ctx, {
                     type: 'line',
                     data: {
@@ -1203,7 +1277,7 @@ class WaterQualityApp {
 
     async _loadPiper(station, dateFrom, dateTo) {
         const params = new URLSearchParams();
-        params.append('station_id', station);
+        if (station)  params.append('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
@@ -1313,7 +1387,8 @@ class WaterQualityApp {
     // ── Stiff Diagrams ────────────────────────────────────────────────────────
 
     async _loadStiff(station, dateFrom, dateTo) {
-        const params = new URLSearchParams({ station_id: station, limit: 5 });
+        const params = new URLSearchParams({ limit: 5 });
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
@@ -1372,7 +1447,8 @@ class WaterQualityApp {
     // ── Eutrophication ────────────────────────────────────────────────────────
 
     async _loadEutrophication(station, dateFrom, dateTo) {
-        const params = new URLSearchParams({ station_id: station });
+        const params = new URLSearchParams();
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
@@ -1394,7 +1470,7 @@ class WaterQualityApp {
                 <div class="flex items-center justify-between mb-4">
                     <div>
                         <div class="text-3xl font-black text-gray-900">${latest.tsi_overall}</div>
-                        <div class="text-xs text-gray-400">Carlson TSI — ${latest.date}</div>
+                        <div class="text-xs text-gray-400">Carlson TSI — ${this._esc(latest.station || '')} (${latest.date})</div>
                     </div>
                     <span class="trophic-pill ${trophicCls}">
                         <i class="fas fa-water text-xs"></i> ${latest.trophic_class}
@@ -1417,7 +1493,8 @@ class WaterQualityApp {
     // ── AMD ───────────────────────────────────────────────────────────────────
 
     async _loadAMD(station, dateFrom, dateTo) {
-        const params = new URLSearchParams({ station_id: station });
+        const params = new URLSearchParams();
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
@@ -1446,7 +1523,7 @@ class WaterQualityApp {
             panel.innerHTML = `
                 <div class="flex items-center justify-between mb-3">
                     <div>
-                        <div class="text-xs text-gray-400">Latest Reading (${latest.date})</div>
+                        <div class="text-xs text-gray-400">Latest Reading — ${this._esc(latest.station || '')} (${latest.date})</div>
                         <div class="text-xs text-gray-500 mt-1">${latest.amd_flags.length} AMD indicator(s) triggered</div>
                     </div>
                     <span class="amd-pill ${riskCls}">
@@ -1468,7 +1545,8 @@ class WaterQualityApp {
     // ── Seasonal ──────────────────────────────────────────────────────────────
 
     async _loadSeasonal(station, dateFrom, dateTo) {
-        const params = new URLSearchParams({ station_id: station });
+        const params = new URLSearchParams();
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
@@ -1517,25 +1595,32 @@ class WaterQualityApp {
     // ── Pollution Load ────────────────────────────────────────────────────────
 
     _chartLoad = null;
+    _loadReqSeq = 0;
 
-    async _loadPollutionLoad(station, indicator, dateFrom, dateTo) {
+    async _loadPollutionLoad(station, indicator, dateFrom, dateTo, stationName = '', autoSelected = false) {
+        const myReq = ++this._loadReqSeq;
         const params = new URLSearchParams({ station_id: station, indicator });
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
             const res  = await this._fetch(`/api/wq/analytics/pollution-load?${params}`);
             const data = await res.json();
+            if (myReq !== this._loadReqSeq) return;
             const panel = document.getElementById('load-panel');
             const ctx   = document.getElementById('chart-load-trend');
             if (!data.success) return;
             const series = (data.series || []).filter(r => r.load_kg_day !== null);
+            const autoNote = autoSelected && stationName
+                ? `<div class="text-xs text-cyan-700 mb-2"><i class="fas fa-map-marker-alt mr-1"></i>Showing ${this._esc(stationName)} — pick a station above to switch.</div>`
+                : '';
             if (!series.length) {
-                if (panel) panel.innerHTML = '<p class="text-gray-400 text-xs text-center">No flow rate data. Add flow_rate_m3s to readings to compute load.</p>';
-                if (ctx) { if (this._chartLoad) { this._chartLoad.destroy(); this._chartLoad = null; } }
+                if (panel) panel.innerHTML = `${autoNote}<p class="text-gray-400 text-xs text-center">No flow rate data. Add flow_rate_m3s to readings to compute load.</p>`;
+                if (ctx) { const existing = Chart.getChart(ctx); if (existing) existing.destroy(); }
                 return;
             }
             if (ctx) {
-                if (this._chartLoad) { this._chartLoad.destroy(); this._chartLoad = null; }
+                const existing = Chart.getChart(ctx);
+                if (existing) existing.destroy();
                 this._chartLoad = new Chart(ctx, {
                     type: 'bar',
                     data: {
@@ -1556,7 +1641,7 @@ class WaterQualityApp {
                     },
                 });
             }
-            if (panel) panel.innerHTML = `<div class="text-xs text-gray-400 mt-1">${series.length} readings with flow data · indicator: ${this._esc(indicator)}</div>`;
+            if (panel) panel.innerHTML = `${autoNote}<div class="text-xs text-gray-400 mt-1">${series.length} readings with flow data · indicator: ${this._esc(indicator)}</div>`;
         } catch (e) {
             console.error('Pollution load error', e);
         }
@@ -1853,7 +1938,7 @@ class WaterQualityApp {
         const sel = document.getElementById('diag-station');
         if (!sel) return;
         const current = sel.value;
-        sel.innerHTML = '<option value="">Select station…</option>' +
+        sel.innerHTML = '<option value="">All stations</option>' +
             this._stations.map(s => `<option value="${s.id}">${this._esc(s.name)}</option>`).join('');
         if (current) sel.value = current;
     }
@@ -1862,9 +1947,6 @@ class WaterQualityApp {
         const station  = document.getElementById('diag-station')?.value;
         const dateFrom = document.getElementById('diag-from')?.value;
         const dateTo   = document.getElementById('diag-to')?.value;
-        if (!station) {
-            alert('Please select a station first.'); return;
-        }
         await Promise.all([
             this.loadDiagnostics(station, dateFrom, dateTo),
             this.loadMultiUseCompliance(station, dateFrom, dateTo),
@@ -1878,15 +1960,20 @@ class WaterQualityApp {
         return { label: 'Low confidence', cls: 'background:#f1f5f9;color:#475569;' };
     }
 
+    _diagReqSeq = 0;
+
     async loadDiagnostics(station, dateFrom, dateTo) {
+        const myReq = ++this._diagReqSeq;
         const panel = document.getElementById('diag-findings-panel');
         if (!panel) return;
-        const params = new URLSearchParams({ station_id: station });
+        const params = new URLSearchParams();
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
             const res  = await this._fetch(`/api/wq/diagnostics?${params}`);
             const data = await res.json();
+            if (myReq !== this._diagReqSeq) return;
             this.renderDiagnosticFindings(data.findings || []);
         } catch (e) {
             console.error('Diagnostics error', e);
@@ -1930,13 +2017,18 @@ class WaterQualityApp {
         }).join('');
     }
 
+    _muReqSeq = 0;
+
     async loadMultiUseCompliance(station, dateFrom, dateTo) {
-        const params = new URLSearchParams({ station_id: station });
+        const myReq = ++this._muReqSeq;
+        const params = new URLSearchParams();
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
             const res  = await this._fetch(`/api/wq/analytics/multi-use-compliance?${params}`);
             const data = await res.json();
+            if (myReq !== this._muReqSeq) return;
             if (!data.success) return;
             this.renderIrrigationPanel(data.irrigation || []);
             this.renderLivestockPanel(data.livestock || []);
@@ -1958,7 +2050,7 @@ class WaterQualityApp {
                               : latest.overall_restriction_class === 'slight_moderate' ? 'text-amber-600'
                               : 'text-teal-600';
         panel.innerHTML = `
-            <div class="text-xs text-gray-400 mb-2">${latest.date}</div>
+            <div class="text-xs text-gray-400 mb-2">${this._esc(latest.station || '')} · ${latest.date}</div>
             <div class="p-2 rounded-lg mb-2" style="background:#f8fafc;">
                 <div class="flex justify-between text-xs mb-0.5"><span class="text-gray-500">SAR</span><span class="font-bold text-gray-700">${latest.sar_result.sar ?? '—'}</span></div>
                 <div class="text-xs text-gray-400">${this._esc(latest.sar_class.effect_description)}</div>
@@ -1981,12 +2073,12 @@ class WaterQualityApp {
         const latest = rows[rows.length - 1];
         const species = Object.entries(latest.by_species || {});
         if (!species.length) {
-            panel.innerHTML = `<div class="text-xs text-gray-400 mb-2">${latest.date}</div><p class="text-gray-400 text-xs py-2">No TDS reading available for this date.</p>`;
+            panel.innerHTML = `<div class="text-xs text-gray-400 mb-2">${this._esc(latest.station || '')} · ${latest.date}</div><p class="text-gray-400 text-xs py-2">No TDS reading available for this date.</p>`;
             return;
         }
         const sevColor = r => r === 0 ? '#0d9488' : r === 1 ? '#84cc16' : r === 2 ? '#f59e0b' : r === 3 ? '#f97316' : '#dc2626';
         panel.innerHTML = `
-            <div class="text-xs text-gray-400 mb-2">${latest.date}</div>
+            <div class="text-xs text-gray-400 mb-2">${this._esc(latest.station || '')} · ${latest.date}</div>
             ${species.map(([sp, v]) => `
                 <div class="flex items-center justify-between text-xs py-1 border-b border-gray-50 last:border-0">
                     <span class="text-gray-600">${this._esc(sp)}</span>
@@ -2008,7 +2100,7 @@ class WaterQualityApp {
                        : latest.overall_flag === 'caution' ? 'text-amber-600' : 'text-rose-600';
         const violations = (latest.per_indicator || []).filter(p => p.status !== 'within');
         panel.innerHTML = `
-            <div class="text-xs text-gray-400 mb-2">${latest.date} · hardness: ${this._esc(latest.hardness_class)}</div>
+            <div class="text-xs text-gray-400 mb-2">${this._esc(latest.station || '')} · ${latest.date} · hardness: ${this._esc(latest.hardness_class)}</div>
             <div class="text-xs font-bold ${flagCls} mb-2">Overall: ${latest.overall_flag}</div>
             ${violations.length ? violations.map(p => `
                 <div class="flex justify-between text-xs py-1 border-b border-gray-50 last:border-0">
@@ -2018,13 +2110,18 @@ class WaterQualityApp {
         `;
     }
 
+    _ecoReqSeq = 0;
+
     async loadEcosystemHealth(station, dateFrom, dateTo) {
-        const params = new URLSearchParams({ station_id: station });
+        const myReq = ++this._ecoReqSeq;
+        const params = new URLSearchParams();
+        if (station)  params.set('station_id', station);
         if (dateFrom) params.set('date_from', dateFrom);
         if (dateTo)   params.set('date_to', dateTo);
         try {
             const res  = await this._fetch(`/api/wq/analytics/ecosystem-health?${params}`);
             const data = await res.json();
+            if (myReq !== this._ecoReqSeq) return;
             if (!data.success) return;
             this.renderEcosystemHealthGauge(data.ecosystem_health);
         } catch (e) {

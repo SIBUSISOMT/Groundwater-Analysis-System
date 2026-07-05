@@ -724,6 +724,13 @@ def compliance_matrix():
         reading_ids  = [str(row[0]) for row in date_rows]
         col_labels   = [{'id': row[0], 'date': str(row[1]), 'station': row[2]} for row in date_rows]
 
+        # Excludes 'Rejected' measurements (explicitly invalidated via the quality-flag
+        # review workflow, e.g. known instrument error or sampling contamination) —
+        # matches the same "only trustworthy data" convention already used by Blue
+        # Drop, Ecosystem Health, and Seasonal Comparison elsewhere in this file.
+        # Preliminary/Estimated/Questionable are still shown, since this endpoint is
+        # a general-purpose "what does the data look like" snapshot, not a strict
+        # regulatory score — only data explicitly marked invalid is excluded.
         meas_rows = _q(
             f"""
             SELECT m.reading_id, i.indicator_code, i.indicator_name, i.unit,
@@ -732,6 +739,7 @@ def compliance_matrix():
             JOIN dbo.WQ_Indicators   i ON i.indicator_id  = m.indicator_id
             JOIN dbo.WQ_Readings     r ON r.reading_id    = m.reading_id
             WHERE m.reading_id IN ({','.join(['?']*len(reading_ids))})
+              AND m.quality_flag != 'Rejected'
             ORDER BY i.display_order
             """, reading_ids
         )
@@ -1322,8 +1330,10 @@ def patch_quality_flags():
 @require_wq_auth()
 def wq_wqi():
     """
-    Compute CCME-WQI for a station over a date range.
-    Query: station_id (required), date_from, date_to, approved_only (1|0, default 1)
+    Compute CCME-WQI over a date range.
+    Query: station_id (optional — omit for an org-wide index across all
+    stations, the same way Blue Drop already aggregates org-wide),
+    date_from, date_to, approved_only (1|0, default 1)
     """
     org        = g.wq_org_id
     station_id = request.args.get('station_id', type=int)
@@ -1331,17 +1341,16 @@ def wq_wqi():
     date_to    = request.args.get('date_to')
     approved_only = request.args.get('approved_only', '1') != '0'
 
-    if not station_id:
-        return jsonify({'success': False, 'error': 'station_id is required.'}), 400
-
     try:
-        # Verify station belongs to org
-        st_check = _q("SELECT station_id FROM dbo.WQ_Stations WHERE station_id=? AND org_id=?", [station_id, org])
-        if not st_check:
-            return jsonify({'success': False, 'error': 'Station not found.'}), 404
-
         where_extra = ''
-        params = [station_id]
+        params = [org]
+        if station_id:
+            # Verify station belongs to org
+            st_check = _q("SELECT station_id FROM dbo.WQ_Stations WHERE station_id=? AND org_id=?", [station_id, org])
+            if not st_check:
+                return jsonify({'success': False, 'error': 'Station not found.'}), 404
+            where_extra += ' AND r.station_id = ?'
+            params.append(station_id)
         if date_from:
             where_extra += ' AND r.reading_date >= ?'
             params.append(date_from)
@@ -1356,7 +1365,7 @@ def wq_wqi():
             FROM dbo.WQ_Measurements m
             JOIN dbo.WQ_Readings   r ON r.reading_id   = m.reading_id
             JOIN dbo.WQ_Indicators i ON i.indicator_id = m.indicator_id
-            WHERE r.station_id = ? {where_extra}
+            WHERE r.org_id = ? {where_extra}
             """,
             params
         )
@@ -1904,8 +1913,9 @@ def analytics_lsi():
 @require_wq_auth()
 def analytics_eutrophication():
     """
-    Carlson TSI for each reading at a station.
-    Query: station_id (required), date_from, date_to
+    Carlson TSI for each reading at a station, or org-wide across all
+    stations when station_id is omitted.
+    Query: station_id (optional), date_from, date_to
     Uses: TP (µg/L), CHLA (µg/L), SECCHI (m)
     """
     org        = g.wq_org_id
@@ -1913,11 +1923,11 @@ def analytics_eutrophication():
     date_from  = request.args.get('date_from')
     date_to    = request.args.get('date_to')
 
-    if not station_id:
-        return jsonify({'success': False, 'error': 'station_id is required.'}), 400
-
     where_extra = ''
-    params = [station_id, org]
+    params = [org]
+    if station_id:
+        where_extra += ' AND r.station_id = ?'
+        params.append(station_id)
     if date_from:
         where_extra += ' AND r.reading_date >= ?'
         params.append(date_from)
@@ -1928,11 +1938,12 @@ def analytics_eutrophication():
     try:
         rows = _q(
             f"""
-            SELECT r.reading_id, r.reading_date, i.indicator_code, m.measured_val
+            SELECT r.reading_id, r.reading_date, s.station_name, i.indicator_code, m.measured_val
             FROM dbo.WQ_Measurements m
             JOIN dbo.WQ_Readings   r ON r.reading_id   = m.reading_id
+            JOIN dbo.WQ_Stations   s ON s.station_id   = r.station_id
             JOIN dbo.WQ_Indicators i ON i.indicator_id = m.indicator_id
-            WHERE r.station_id = ? AND r.org_id = ?
+            WHERE r.org_id = ?
               AND i.indicator_code IN ('TP','CHLA','SECCHI')
               AND m.measured_val IS NOT NULL
               {where_extra}
@@ -1944,10 +1955,12 @@ def analytics_eutrophication():
         from collections import defaultdict
         rv = defaultdict(dict)
         rd = {}
+        rs = {}
         if rows:
-            for rid, rdate, code, val in rows:
+            for rid, rdate, sname, code, val in rows:
                 rv[rid][code] = val
                 rd[rid] = str(rdate)
+                rs[rid] = sname
 
         results = []
         for rid, vals in rv.items():
@@ -1956,7 +1969,7 @@ def analytics_eutrophication():
                 chl_a_ug_L = vals.get('CHLA'),
                 secchi_m   = vals.get('SECCHI'),
             )
-            results.append({'reading_id': rid, 'date': rd[rid], **tsi})
+            results.append({'reading_id': rid, 'date': rd[rid], 'station': rs[rid], **tsi})
 
         return jsonify({'success': True, 'eutrophication': results})
     except Exception as exc:
@@ -1994,18 +2007,18 @@ def analytics_inorganic_nitrogen():
     per-measurement compliance flag — this is a read-only, multi-indicator
     calculation, computed the same way compute_trophic_state_index() combines
     TP/CHLA/SECCHI for analytics_eutrophication() above.
-    Query: station_id (required), date_from, date_to
+    Query: station_id (optional — omit for org-wide across all stations), date_from, date_to
     """
     org        = g.wq_org_id
     station_id = request.args.get('station_id', type=int)
     date_from  = request.args.get('date_from')
     date_to    = request.args.get('date_to')
 
-    if not station_id:
-        return jsonify({'success': False, 'error': 'station_id is required.'}), 400
-
     where_extra = ''
-    params = [station_id, org]
+    params = [org]
+    if station_id:
+        where_extra += ' AND r.station_id = ?'
+        params.append(station_id)
     if date_from:
         where_extra += ' AND r.reading_date >= ?'
         params.append(date_from)
@@ -2016,11 +2029,12 @@ def analytics_inorganic_nitrogen():
     try:
         rows = _q(
             f"""
-            SELECT r.reading_id, r.reading_date, i.indicator_code, m.measured_val
+            SELECT r.reading_id, r.reading_date, s.station_name, i.indicator_code, m.measured_val
             FROM dbo.WQ_Measurements m
             JOIN dbo.WQ_Readings   r ON r.reading_id   = m.reading_id
+            JOIN dbo.WQ_Stations   s ON s.station_id   = r.station_id
             JOIN dbo.WQ_Indicators i ON i.indicator_id = m.indicator_id
-            WHERE r.station_id = ? AND r.org_id = ?
+            WHERE r.org_id = ?
               AND i.indicator_code IN ('NH4','NO2','NO3')
               AND m.measured_val IS NOT NULL
               {where_extra}
@@ -2032,10 +2046,12 @@ def analytics_inorganic_nitrogen():
         from collections import defaultdict
         rv = defaultdict(dict)
         rd = {}
+        rs = {}
         if rows:
-            for rid, rdate, code, val in rows:
+            for rid, rdate, sname, code, val in rows:
                 rv[rid][code] = val
                 rd[rid] = str(rdate)
+                rs[rid] = sname
 
         results = []
         for rid, vals in rv.items():
@@ -2046,6 +2062,7 @@ def analytics_inorganic_nitrogen():
             results.append({
                 'reading_id': rid,
                 'date': rd[rid],
+                'station': rs[rid],
                 'inorganic_n_mgL': round(n_total, 4),
                 'trophic_status': _inorganic_n_trophic_status(n_total),
                 'components_present': present,
@@ -2064,7 +2081,8 @@ def analytics_inorganic_nitrogen():
 @require_wq_auth()
 def analytics_amd():
     """
-    Acid Mine Drainage (AMD) indicators for a station.
+    Acid Mine Drainage (AMD) indicators for one station, or org-wide across
+    all stations when station_id is omitted.
     Flags readings as AMD-suspect based on SA Witwatersrand criteria.
     pH ≤ 4, EC > 500 mS/m, SO4 > 1000 mg/L, Fe(total) > 10 mg/L
     """
@@ -2073,11 +2091,11 @@ def analytics_amd():
     date_from  = request.args.get('date_from')
     date_to    = request.args.get('date_to')
 
-    if not station_id:
-        return jsonify({'success': False, 'error': 'station_id is required.'}), 400
-
     where_extra = ''
-    params = [station_id, org]
+    params = [org]
+    if station_id:
+        where_extra += ' AND r.station_id = ?'
+        params.append(station_id)
     if date_from:
         where_extra += ' AND r.reading_date >= ?'
         params.append(date_from)
@@ -2088,11 +2106,12 @@ def analytics_amd():
     try:
         rows = _q(
             f"""
-            SELECT r.reading_id, r.reading_date, i.indicator_code, m.measured_val
+            SELECT r.reading_id, r.reading_date, s.station_name, i.indicator_code, m.measured_val
             FROM dbo.WQ_Measurements m
             JOIN dbo.WQ_Readings   r ON r.reading_id   = m.reading_id
+            JOIN dbo.WQ_Stations   s ON s.station_id   = r.station_id
             JOIN dbo.WQ_Indicators i ON i.indicator_id = m.indicator_id
-            WHERE r.station_id = ? AND r.org_id = ?
+            WHERE r.org_id = ?
               AND i.indicator_code IN ('PH','EC','SO4','FE','FE2','FE3','TOTAL_ACID','MN','AS')
               AND m.measured_val IS NOT NULL
               {where_extra}
@@ -2104,10 +2123,12 @@ def analytics_amd():
         from collections import defaultdict
         rv = defaultdict(dict)
         rd = {}
+        rs = {}
         if rows:
-            for rid, rdate, code, val in rows:
+            for rid, rdate, sname, code, val in rows:
                 rv[rid][code] = val
                 rd[rid] = str(rdate)
+                rs[rid] = sname
 
         results = []
         for rid, vals in rv.items():
@@ -2115,6 +2136,7 @@ def analytics_amd():
             results.append({
                 'reading_id':  rid,
                 'date':        rd[rid],
+                'station':     rs[rid],
                 'parameters':  vals,
                 'amd_flags':   amd['flags'],
                 'amd_risk':    amd['amd_risk'],
@@ -2135,18 +2157,19 @@ def analytics_seasonal():
     """
     Compare mean values per indicator between Wet and Dry seasons.
     SA Wet season = Oct–Apr, Dry = May–Sep.
-    Query: station_id (required), date_from, date_to
+    Query: station_id (optional — omit to aggregate wet/dry means org-wide
+    across all stations), date_from, date_to
     """
     org        = g.wq_org_id
     station_id = request.args.get('station_id', type=int)
     date_from  = request.args.get('date_from')
     date_to    = request.args.get('date_to')
 
-    if not station_id:
-        return jsonify({'success': False, 'error': 'station_id is required.'}), 400
-
     where_extra = ''
-    params = [station_id, org]
+    params = [org]
+    if station_id:
+        where_extra += ' AND r.station_id = ?'
+        params.append(station_id)
     if date_from:
         where_extra += ' AND r.reading_date >= ?'
         params.append(date_from)
@@ -2167,11 +2190,11 @@ def analytics_seasonal():
             FROM dbo.WQ_Measurements m
             JOIN dbo.WQ_Readings   r ON r.reading_id   = m.reading_id
             JOIN dbo.WQ_Indicators i ON i.indicator_id = m.indicator_id
-            WHERE r.station_id = ? AND r.org_id = ?
+            WHERE r.org_id = ?
               AND m.measured_val IS NOT NULL
               AND m.quality_flag IN ('Approved', 'Estimated')
               {where_extra}
-            GROUP BY i.indicator_code, i.indicator_name, i.unit,
+            GROUP BY i.indicator_code, i.indicator_name, i.unit, i.display_order,
                      CASE WHEN MONTH(r.reading_date) IN (10,11,12,1,2,3,4)
                           THEN 'Wet' ELSE 'Dry' END
             ORDER BY i.display_order
@@ -2586,18 +2609,19 @@ def analytics_multi_use_compliance():
     Irrigation (DWAF Vol 4 SAR/EC), livestock watering (DWAF Vol 5 TDS-per-
     species) and aquaculture (DWAF Vol 6) fitness-for-use verdicts per
     reading — derived live from already-stored measurements, never persisted
-    (same pattern as analytics_amd()).
+    (same pattern as analytics_amd()). station_id is optional; when omitted,
+    returns verdicts across all of the org's stations.
     """
     org        = g.wq_org_id
     station_id = request.args.get('station_id', type=int)
     date_from  = request.args.get('date_from')
     date_to    = request.args.get('date_to')
 
-    if not station_id:
-        return jsonify({'success': False, 'error': 'station_id is required.'}), 400
-
     where_extra = ''
-    params = [station_id, org]
+    params = [org]
+    if station_id:
+        where_extra += ' AND r.station_id = ?'
+        params.append(station_id)
     if date_from:
         where_extra += ' AND r.reading_date >= ?'
         params.append(date_from)
@@ -2608,11 +2632,12 @@ def analytics_multi_use_compliance():
     try:
         rows = _q(
             f"""
-            SELECT r.reading_id, r.reading_date, i.indicator_code, m.measured_val
+            SELECT r.reading_id, r.reading_date, s.station_name, i.indicator_code, m.measured_val
             FROM dbo.WQ_Measurements m
             JOIN dbo.WQ_Readings   r ON r.reading_id   = m.reading_id
+            JOIN dbo.WQ_Stations   s ON s.station_id   = r.station_id
             JOIN dbo.WQ_Indicators i ON i.indicator_id = m.indicator_id
-            WHERE r.station_id = ? AND r.org_id = ? AND m.measured_val IS NOT NULL
+            WHERE r.org_id = ? AND m.measured_val IS NOT NULL
               {where_extra}
             ORDER BY r.reading_date
             """, params
@@ -2621,10 +2646,12 @@ def analytics_multi_use_compliance():
         from collections import defaultdict
         rv = defaultdict(dict)
         rd = {}
+        rs = {}
         if rows:
-            for rid, rdate, code, val in rows:
+            for rid, rdate, sname, code, val in rows:
                 rv[rid][code] = val
                 rd[rid] = str(rdate)
+                rs[rid] = sname
 
         livestock_bands = _fetch_livestock_bands()
         aqua_criteria   = _fetch_aquaculture_criteria()
@@ -2632,13 +2659,13 @@ def analytics_multi_use_compliance():
         irrigation, livestock, aquaculture = [], [], []
         for rid, vals in rv.items():
             irr = compute_irrigation_suitability(vals, vals.get('EC'))
-            irrigation.append({'reading_id': rid, 'date': rd[rid], **irr})
+            irrigation.append({'reading_id': rid, 'date': rd[rid], 'station': rs[rid], **irr})
 
             live = compute_livestock_suitability(vals.get('TDS'), livestock_bands)
-            livestock.append({'reading_id': rid, 'date': rd[rid], **live})
+            livestock.append({'reading_id': rid, 'date': rd[rid], 'station': rs[rid], **live})
 
             aqua = compute_aquaculture_suitability(vals, vals.get('HARD'), aqua_criteria)
-            aquaculture.append({'reading_id': rid, 'date': rd[rid], **aqua})
+            aquaculture.append({'reading_id': rid, 'date': rd[rid], 'station': rs[rid], **aqua})
 
         return jsonify({'success': True, 'irrigation': irrigation, 'livestock': livestock, 'aquaculture': aquaculture})
     except Exception as exc:

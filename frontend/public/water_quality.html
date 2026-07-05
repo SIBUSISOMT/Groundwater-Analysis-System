@@ -486,7 +486,7 @@
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Standard</label>
-                    <select id="analysis-standard" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" onchange="WQ.loadComplianceMatrix()">
+                    <select id="analysis-standard" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" onchange="WQ.onStandardChange()">
                         <option value="sans241">SANS 241:2015 (drinking water)</option>
                         <option value="twqr">TWQR — DWAF Vol 7 (aquatic ecosystems)</option>
                     </select>
@@ -529,7 +529,7 @@
                 <!-- Radar snapshot -->
                 <div class="bg-white rounded-2xl shadow-sm p-5" style="border:1px solid #f1f5f9;">
                     <div class="section-head mb-1">Latest Reading Snapshot</div>
-                    <p class="text-xs text-gray-400 mb-4">Normalised % of upper standard limit</p>
+                    <p class="text-xs text-gray-400 mb-4" id="radar-subtitle">Normalised % of upper standard limit</p>
                     <canvas id="chart-radar" height="140"></canvas>
                 </div>
             </div>
@@ -663,21 +663,21 @@
             <div class="bg-white rounded-xl shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-end" style="border:1px solid #f1f5f9;">
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Station</label>
-                    <select id="ana-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
-                        <option value="">Select station…</option>
+                    <select id="ana-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" onchange="WQ.loadAnalytics()">
+                        <option value="">All stations</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Date From</label>
-                    <input type="date" id="ana-from" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <input type="date" id="ana-from" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadAnalytics()">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Date To</label>
-                    <input type="date" id="ana-to" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <input type="date" id="ana-to" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadAnalytics()">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Indicator (MK / Load)</label>
-                    <select id="ana-indicator" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <select id="ana-indicator" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadAnalytics()">
                         <option value="EC">EC</option>
                         <option value="PH">pH</option>
                         <option value="TDS">TDS</option>
@@ -956,17 +956,17 @@
             <div class="bg-white rounded-xl shadow-sm p-4 mb-5 flex flex-wrap gap-3 items-end" style="border:1px solid #f1f5f9;">
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Station</label>
-                    <select id="diag-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none">
-                        <option value="">Select station…</option>
+                    <select id="diag-station" class="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none" onchange="WQ.loadDiagnosticsTab()">
+                        <option value="">All stations</option>
                     </select>
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Date From</label>
-                    <input type="date" id="diag-from" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <input type="date" id="diag-from" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadDiagnosticsTab()">
                 </div>
                 <div>
                     <label class="block text-xs font-semibold text-gray-500 mb-1">Date To</label>
-                    <input type="date" id="diag-to" class="border border-gray-200 rounded-lg px-3 py-2 text-sm">
+                    <input type="date" id="diag-to" class="border border-gray-200 rounded-lg px-3 py-2 text-sm" onchange="WQ.loadDiagnosticsTab()">
                 </div>
                 <button onclick="WQ.loadDiagnosticsTab()"
                         class="px-4 py-2 text-sm font-semibold text-white rounded-lg transition-all"
